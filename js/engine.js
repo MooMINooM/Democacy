@@ -70,24 +70,45 @@ export const engine = {
         });
         pArr[0].seats += rSeats;
 
+        // จัดตั้งรัฐบาล (บังคับเสียงเกิน 250 เสียงเสมอ)
         pArr[0].status = "Government";
         let currentGovSeats = pArr[0].seats;
-        for(let i=1; i<pArr.length; i++){
-            if(currentGovSeats < 270) {
-                let conflict = false;
-                pArr[i].ideologies.forEach(ideo => {
-                    if(Data.IDEOLOGY_CONFLICTS[ideo] && Data.IDEOLOGY_CONFLICTS[ideo].some(c => pArr[0].ideologies.includes(c))) conflict = true;
-                });
-                if(!conflict) {
+        
+        // ก๊อกที่ 1: ดึงพรรคที่อุดมการณ์ไม่ขัดแย้งกัน
+        for(let i=1; i<pArr.length; i++) {
+            if (currentGovSeats > 250) break;
+            let conflict = false;
+            pArr[i].ideologies.forEach(ideo => {
+                if(Data.IDEOLOGY_CONFLICTS[ideo] && Data.IDEOLOGY_CONFLICTS[ideo].some(c => pArr[0].ideologies.includes(c))) conflict = true;
+            });
+            if (!conflict) {
+                pArr[i].status = "Government";
+                currentGovSeats += pArr[i].seats;
+            }
+        }
+
+        // ก๊อกที่ 2: ถ้าเสียงยังไม่ถึง 250 (เช่น ขัดแย้งกันเยอะ) ดึงพรรคเข้าร่วมข้ามขั้วทันทีเพื่อให้ตั้งรัฐบาลได้
+        if (currentGovSeats <= 250) {
+            for(let i=1; i<pArr.length; i++) {
+                if (currentGovSeats > 250) break;
+                if (pArr[i].status !== "Government") {
                     pArr[i].status = "Government";
                     currentGovSeats += pArr[i].seats;
                 }
-            } else if (pArr[i].seats > 40 || Math.random() > 0.5) {
-                pArr[i].status = "Opposition";
-            } else {
-                pArr[i].status = "Neutral";
             }
         }
+
+        // สรุปสถานะพรรคที่เหลือเป็นฝ่ายค้านหรือวางเฉย
+        for(let i=1; i<pArr.length; i++) {
+            if (pArr[i].status !== "Government") {
+                if (pArr[i].seats > 40 || Math.random() > 0.5) {
+                    pArr[i].status = "Opposition";
+                } else {
+                    pArr[i].status = "Neutral";
+                }
+            }
+        }
+
         return pArr;
     },
 
@@ -140,33 +161,28 @@ export const engine = {
         ui.updateMain();
     },
 
-    // --- UPGRADED: Individual Lobbying with Loyalty Check ---
     buyCobra(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        const cost = 10000000; // 10M per MP
+        const cost = 10000000; 
         
         if (mp.isCobra) { alert("สส. ท่านนี้เป็นงูเห่าฝั่งเราอยู่แล้ว!"); return; }
         if (state.player.personalFunds < cost) { alert("เงินส่วนตัวไม่เพียงพอ"); return; }
         
-        // เช็คสถานะพรรคและ Loyalty
         if (mp.party.status === "Opposition" || mp.party.status === "Neutral") {
-            // ถ้า Loyalty สูงเกิน 60 จะปฏิเสธเด็ดขาด
             if (mp.loyalty > 60) {
                 alert(`ล้มเหลว! สส. ${mp.name} มีความภักดีต่อพรรคสูงมาก (${mp.loyalty.toFixed(0)}%) และปฏิเสธข้อเสนอทันที`);
                 return;
             }
-            // ถ้า Loyalty 30-60 จะสุ่มโอกาสสำเร็จ
             if (mp.loyalty >= 30) {
-                const successChance = 100 - (mp.loyalty * 1.5); // โอกาสสำเร็จลดลงตาม Loyalty
+                const successChance = 100 - (mp.loyalty * 1.5); 
                 if (Math.random() * 100 > successChance) {
-                    state.player.personalFunds -= (cost / 2); // เสียค่าดำเนินการ 5M แม้ไม่สำเร็จ
+                    state.player.personalFunds -= (cost / 2); 
                     alert(`ดีลล้มเหลว! สส. ${mp.name} ตัดสินใจปฏิเสธข้อเสนอ (สูญเงินดำเนินการ ฿5M)`);
                     ui.updateMain();
                     return;
                 }
             }
         } else if (mp.party.status === "Government" && mp.party.id !== state.player.party.id) {
-            // สส. พรรคร่วมรัฐบาล
             if (mp.loyalty > 70) {
                 alert(`ล้มเหลว! สส. ${mp.name} ภักดีต่อพรรคร่วมมากเกินไป ปฏิเสธการเป็นงูเห่า`);
                 return;
@@ -176,10 +192,9 @@ export const engine = {
             return;
         }
         
-        // ดีลสำเร็จ
         state.player.personalFunds -= cost;
         mp.isCobra = true;
-        mp.loyalty = 0; // ทรยศพรรคเดิมโดยสมบูรณ์
+        mp.loyalty = 0; 
         this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} ตกลงรับข้อเสนอพิเศษ (เปลี่ยนสถานะเป็น: งูเห่า)`);
         ui.updateMain();
     },
@@ -219,14 +234,13 @@ export const engine = {
             if(mp.party.status === "Opposition") score -= 40;
             if(mp.party.status === "Government") score += 30;
 
-            // Cobra Logic for No-Confidence
             let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.3) || mp.isCobra;
 
             if(mp.party.status === "Government") {
-                if(voteAgainstParty) yes++; // Gov MP betrays Gov
+                if(voteAgainstParty) yes++; 
                 else no++;
             } else if(mp.party.status === "Opposition") {
-                if(voteAgainstParty) no++; // Opp MP helps Gov
+                if(voteAgainstParty) no++; 
                 else yes++;
             } else {
                 if (score < 50) yes++; else no++;
@@ -262,14 +276,13 @@ export const engine = {
             if (mp.party.ideologies.includes(p.ideology)) score += 35;
             score += (p.coalitionBoost || 0); 
 
-            // Individual Choice vs Party Whip
             let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra;
 
             if(mp.party.status === "Government") {
-                if (voteAgainstParty) no++; // Cobra in Government
+                if (voteAgainstParty) no++; 
                 else yes++;
             } else if (mp.party.status === "Opposition") {
-                if (voteAgainstParty) yes++; // Cobra in Opposition (supports Gov bill)
+                if (voteAgainstParty) yes++; 
                 else no++;
             } else {
                 if (score > 50) yes++; else no++;
