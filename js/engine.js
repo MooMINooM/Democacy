@@ -37,14 +37,13 @@ export const engine = {
         state.world.transparency = 100; 
         state.history = { approval: [], budget: [] }; 
         state.lastVoteResults = null; 
-        state.lastVoteLog = []; // Detailed vote log
+        state.lastVoteLog = [];
 
         state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5) }));
         if(state.parties.length === 0) state.parties = this.generateGameParties();
         state.leaders = [];
         let nIdx = 0;
         
-        // Generate MPs with Traits
         state.parties.forEach(p => {
             for(let i=0; i<p.seats; i++) {
                 const trait = Data.MP_TRAITS[Math.floor(Math.random() * Data.MP_TRAITS.length)];
@@ -56,8 +55,8 @@ export const engine = {
                     prestige: Math.floor(Math.random() * 100), 
                     loyalty: 40 + Math.random() * 60, 
                     isCobra: false,
-                    trait: trait, // Assign Trait
-                    cash: Math.floor(Math.random() * 50) + 10 // MP Personal Wealth (Millions)
+                    trait: trait, 
+                    cash: Math.floor(Math.random() * 50) + 10 
                 });
             }
         });
@@ -127,10 +126,9 @@ export const engine = {
         state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
     },
     
-    // --- MP MANAGEMENT ACTIONS ---
     lobbyIndividual(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        const cost = 2000000; // 2M
+        const cost = 2000000; 
         if (state.player.personalFunds < cost) { alert("เงินไม่พอ"); return; }
         state.player.personalFunds -= cost;
         mp.loyalty = Math.min(100, mp.loyalty + 10);
@@ -141,20 +139,12 @@ export const engine = {
 
     forceSwitchParty(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        const cost = 50000000 * mp.trait.costMod; // 50M base * trait modifier
-        
+        const cost = 50000000 * mp.trait.costMod; 
         if (mp.party.id === state.player.party.id) { alert("อยู่พรรคเดียวกันอยู่แล้ว"); return; }
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
         if (mp.trait.name === "คนดี" || mp.trait.name === "อุดมการณ์สูง") { alert(`สส. คนนี้ซื้อไม่ได้ หรือยากเกินไป`); return; }
-
         state.player.personalFunds -= cost;
-        // Logic to switch party
-        mp.party.seats--; // Remove seat from old party
-        mp.party = state.player.party; // Assign to player party
-        mp.party.seats++; // Add seat to player party
-        mp.loyalty = 50; // Reset loyalty
-        mp.isCobra = false; // No longer a cobra if they officially switched
-        
+        mp.party.seats--; mp.party = state.player.party; mp.party.seats++; mp.loyalty = 50; mp.isCobra = false; 
         state.world.transparency -= 15;
         this.addNews(`ดูด สส. สำเร็จ!`, `${mp.name} ย้ายขั้วมาสังกัด ${state.player.party.name} อย่างเป็นทางการ`);
         ui.updateMain();
@@ -165,20 +155,10 @@ export const engine = {
         const cost = 10000000 * mp.trait.costMod; 
         if (mp.isCobra) { alert("เป็นงูเห่าอยู่แล้ว"); return; }
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
-        
-        // Transparency Penalty
         state.world.transparency = Math.max(0, state.world.transparency - 5);
-
         if (mp.trait.name === "คนดี") { alert("ปฏิเสธ: เป็นคนดี"); return; }
-        
-        // Success Chance based on Loyalty and Traits
         const successChance = 100 - (mp.loyalty * mp.trait.loyaltyMod);
-        if (Math.random() * 100 > successChance) {
-             state.player.personalFunds -= (cost / 5); // Lose deposit
-             alert(`ดีลล้มเหลว! ${mp.name} ปฏิเสธ (สูญเงินมัดจำ)`);
-             return;
-        }
-        
+        if (Math.random() * 100 > successChance) { state.player.personalFunds -= (cost / 5); alert(`ดีลล้มเหลว! ${mp.name} ปฏิเสธ (สูญเงินมัดจำ)`); return; }
         state.player.personalFunds -= cost;
         mp.isCobra = true; mp.loyalty = 0; mp.cash += 10;
         this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} เป็นงูเห่า (Transparency -5)`);
@@ -187,13 +167,8 @@ export const engine = {
 
     triggerCrisis() {
         const type = Math.random() > 0.5 ? "Economic" : "Protest";
-        if (type === "Economic") {
-            state.world.growth -= 2.5;
-            this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง");
-        } else {
-            state.world.cabinetStability -= 15;
-            this.addNews("ม็อบลงถนนขับไล่รัฐบาล!", "ประชาชนชุมนุมใหญ่ เรียกร้องให้ยุบสภา");
-        }
+        if (type === "Economic") { state.world.growth -= 2.5; this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง"); } 
+        else { state.world.cabinetStability -= 15; this.addNews("ม็อบลงถนนขับไล่รัฐบาล!", "ประชาชนชุมนุมใหญ่ เรียกร้องให้ยุบสภา"); }
         ui.updateMain();
     },
 
@@ -205,19 +180,46 @@ export const engine = {
         document.getElementById('event-modal').classList.remove('hidden');
     },
 
-    propose(p, proposer = "รัฐบาล") {
-        if (state.activePolicies.some(x => x.name === p.name)) return;
+    // --- FIX: Accept Policy Name String instead of Object ---
+    propose(policyInput, proposer = "รัฐบาล") {
+        // Resolve Policy Object if string is passed
+        const p = typeof policyInput === 'string' 
+            ? Data.POLICY_TEMPLATES.find(x => x.name === policyInput) 
+            : policyInput;
+
+        if (!p) { console.error("Policy not found:", policyInput); return; }
+
+        if (state.activePolicies.some(x => x.name === p.name)) {
+            // FIX: Add alert feedback
+            alert(`นโยบาย "${p.name}" อยู่ในวาระการพิจารณาแล้ว`);
+            return;
+        }
+
         if(proposer !== "รัฐบาล") {
             state.activePolicies.push({ ...p, stage: 1, isDeliberating: true, remainingDays: p.delibTime, totalDays: p.delibTime, proposer, coalitionBoost: 0, oppositionLobby: 0 });
             ui.updateMain(); return;
         }
+        
         gameClock.setSpeed(0); ui.resetModalState();
-        const stakeholders = [state.factions.find(f => f.name === p.target)];
-        while(stakeholders.length < 3) { let rf = state.factions[Math.floor(Math.random()*17)]; if(!stakeholders.includes(rf)) stakeholders.push(rf); }
+        
+        // Fix potential undefined stakeholder
+        const targetFaction = state.factions.find(f => f.name === p.target);
+        const stakeholders = targetFaction ? [targetFaction] : [];
+        
+        while(stakeholders.length < 3) { 
+            let rf = state.factions[Math.floor(Math.random()*17)]; 
+            if(rf && !stakeholders.includes(rf)) stakeholders.push(rf); 
+        }
+        
         ui.showStakeholderReview(p, stakeholders, proposer);
     },
 
-    confirmProposal(p, proposer) {
+    // --- FIX: Accept Policy Name String ---
+    confirmProposal(policyInput, proposer) {
+        const p = typeof policyInput === 'string' 
+            ? Data.POLICY_TEMPLATES.find(x => x.name === policyInput) 
+            : policyInput;
+
         state.activePolicies.push({ ...p, stage: 1, isDeliberating: true, remainingDays: p.delibTime, totalDays: p.delibTime, proposer, coalitionBoost: 0, oppositionLobby: 0 });
         this.addNews(`ยื่นเสนอร่าง ${p.name}`, `โดยรัฐบาล เข้าสู่วาระการพิจารณาชั้นกรรมาธิการ`);
         document.getElementById('event-modal').classList.add('hidden');
@@ -297,7 +299,7 @@ export const engine = {
             const coalitions = state.parties.filter(py => py.status === "Government" && py.id !== state.player.party.id);
             if (coalitions.length > 0) {
                 const badActor = coalitions[Math.floor(Math.random() * coalitions.length)];
-                const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === "การคลัง" || t.ministry === "คมนาคม"); // Simply verify demand exist
+                const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === "การคลัง" || t.ministry === "คมนาคม"); 
                 if (demands.length > 0) {
                      ui.showQuidProQuo(p, demands[0], badActor); return; 
                 }
