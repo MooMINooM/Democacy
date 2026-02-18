@@ -28,6 +28,7 @@ export const gameClock = {
 
 export const engine = {
     init() {
+        state.voteModifier = null; // Reset Vote Modifier
         state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5) }));
         if(state.parties.length === 0) state.parties = this.generateGameParties();
         state.leaders = [];
@@ -70,11 +71,11 @@ export const engine = {
         });
         pArr[0].seats += rSeats;
 
-        // จัดตั้งรัฐบาล (บังคับเสียงเกิน 250 เสียงเสมอ)
+        // Force 250+ Majority Logic
         pArr[0].status = "Government";
         let currentGovSeats = pArr[0].seats;
         
-        // ก๊อกที่ 1: ดึงพรรคที่อุดมการณ์ไม่ขัดแย้งกัน
+        // Round 1: Ideology Match
         for(let i=1; i<pArr.length; i++) {
             if (currentGovSeats > 250) break;
             let conflict = false;
@@ -87,7 +88,7 @@ export const engine = {
             }
         }
 
-        // ก๊อกที่ 2: ถ้าเสียงยังไม่ถึง 250 (เช่น ขัดแย้งกันเยอะ) ดึงพรรคเข้าร่วมข้ามขั้วทันทีเพื่อให้ตั้งรัฐบาลได้
+        // Round 2: Force Join if needed
         if (currentGovSeats <= 250) {
             for(let i=1; i<pArr.length; i++) {
                 if (currentGovSeats > 250) break;
@@ -98,17 +99,12 @@ export const engine = {
             }
         }
 
-        // สรุปสถานะพรรคที่เหลือเป็นฝ่ายค้านหรือวางเฉย
         for(let i=1; i<pArr.length; i++) {
             if (pArr[i].status !== "Government") {
-                if (pArr[i].seats > 40 || Math.random() > 0.5) {
-                    pArr[i].status = "Opposition";
-                } else {
-                    pArr[i].status = "Neutral";
-                }
+                if (pArr[i].seats > 40 || Math.random() > 0.5) pArr[i].status = "Opposition";
+                else pArr[i].status = "Neutral";
             }
         }
-
         return pArr;
     },
 
@@ -164,7 +160,6 @@ export const engine = {
     buyCobra(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
         const cost = 10000000; 
-        
         if (mp.isCobra) { alert("สส. ท่านนี้เป็นงูเห่าฝั่งเราอยู่แล้ว!"); return; }
         if (state.player.personalFunds < cost) { alert("เงินส่วนตัวไม่เพียงพอ"); return; }
         
@@ -193,8 +188,7 @@ export const engine = {
         }
         
         state.player.personalFunds -= cost;
-        mp.isCobra = true;
-        mp.loyalty = 0; 
+        mp.isCobra = true; mp.loyalty = 0; 
         this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} ตกลงรับข้อเสนอพิเศษ (เปลี่ยนสถานะเป็น: งูเห่า)`);
         ui.updateMain();
     },
@@ -237,11 +231,9 @@ export const engine = {
             let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.3) || mp.isCobra;
 
             if(mp.party.status === "Government") {
-                if(voteAgainstParty) yes++; 
-                else no++;
+                if(voteAgainstParty) yes++; else no++;
             } else if(mp.party.status === "Opposition") {
-                if(voteAgainstParty) no++; 
-                else yes++;
+                if(voteAgainstParty) no++; else yes++;
             } else {
                 if (score < 50) yes++; else no++;
             }
@@ -259,15 +251,61 @@ export const engine = {
         ui.renderCabinet(); ui.updateMain();
     },
 
+    // --- NEW: Quid Pro Quo (QPQ) Start Vote ---
     startVote(pName) {
+        state.voteModifier = null; // Clear old modifiers
         const p = state.activePolicies.find(x => x.name === pName);
-        gameClock.setSpeed(0); ui.resetModalState();
-        document.getElementById('event-title').innerText = `สภาลงมติ: ${p.name}`;
-        document.getElementById('voting-display').classList.remove('hidden');
-        document.getElementById('event-options').innerHTML = `<button onclick="engine.runVote('${p.name}')" class="w-full p-4 bg-red-700 hover:bg-red-600 rounded-xl font-bold text-white font-sans">ลงมติ</button>`;
-        document.getElementById('event-modal').classList.remove('hidden');
+        
+        // 30% Chance to Interrupt if it's a Gov bill
+        if (p.proposer === "รัฐบาล" && Math.random() < 0.3) {
+            // Find a coalition party (Government status, not player's party)
+            const coalitions = state.parties.filter(py => py.status === "Government" && py.id !== state.player.party.id);
+            if (coalitions.length > 0) {
+                const badActor = coalitions[Math.floor(Math.random() * coalitions.length)];
+                
+                // Check if they control any ministry
+                const ministers = state.leaders.filter(l => l.party.id === badActor.id && Object.values(Data.MINISTRIES).some(m => m.currentMinister === l));
+                
+                if (ministers.length > 0) {
+                    const minister = ministers[Math.floor(Math.random() * ministers.length)];
+                    const ministryName = Object.keys(Data.MINISTRIES).find(k => Data.MINISTRIES[k].currentMinister === minister);
+                    
+                    // Find a policy for that ministry
+                    const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === ministryName);
+                    if (demands.length > 0) {
+                        const demand = demands[Math.floor(Math.random() * demands.length)];
+                        ui.showQuidProQuo(p, demand, badActor);
+                        return; // INTERRUPT!
+                    }
+                }
+            }
+        }
+        
+        // No interruption, proceed normally
+        ui.showVoteInterface(pName);
     },
 
+    // --- NEW: Process QPQ Decision ---
+    processQuidProQuo(pName, demandName, partyId, accepted) {
+        const p = state.activePolicies.find(x => x.name === pName);
+        const demand = Data.POLICY_TEMPLATES.find(x => x.name === demandName);
+        const party = state.parties.find(x => x.id === partyId);
+
+        if (accepted) {
+            // Executre Demand Immediately
+            state.world.nationalBudget -= demand.cost;
+            Object.entries(demand.impact).forEach(([fn,v]) => { const fac = state.factions.find(x=>x.name===fn); if(fac) fac.approval += v; });
+            
+            this.addNews(`ดีลการเมือง: ${demand.name}`, `รัฐบาลอนุมัตินโยบายของ ${party.name} แบบเร่งด่วนเพื่อแลกเสียงโหวต`);
+            state.voteModifier = { partyId: partyId, type: 'support' }; // Modifier for Vote
+        } else {
+            this.addNews(`ดีลล่ม! พรรคร่วมไม่พอใจ`, `การเจรจาแลกเปลี่ยนนโยบายกับ ${party.name} ล้มเหลว ส่อเค้าวุ่นวายในสภา`);
+            state.voteModifier = { partyId: partyId, type: 'rebel' }; // Modifier for Vote
+        }
+        ui.showVoteInterface(pName); // Continue to vote screen
+    },
+
+    // --- UPGRADED: Voting Logic with QPQ and Cobra ---
     runVote(pName) {
         const p = state.activePolicies.find(x => x.name === pName);
         let yes = 0, no = 0;
@@ -276,14 +314,25 @@ export const engine = {
             if (mp.party.ideologies.includes(p.ideology)) score += 35;
             score += (p.coalitionBoost || 0); 
 
+            // QPQ Logic: Affects the whole party (unless Cobra)
+            if (state.voteModifier && mp.party.id === state.voteModifier.partyId) {
+                if (state.voteModifier.type === 'support') score += 100; // Guaranteed YES
+                if (state.voteModifier.type === 'rebel') score -= 100; // Guaranteed NO (mostly)
+            }
+
+            // Cobra / Individual Logic
             let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra;
 
+            // Cobra overrides Party Decision (Money talks louder than party deals)
+            if (mp.isCobra) {
+                 if(mp.party.status === "Government") voteAgainstParty = false; // Cobra votes FOR Gov always
+                 if(mp.party.status === "Opposition") voteAgainstParty = true; // Cobra votes FOR Gov always
+            }
+
             if(mp.party.status === "Government") {
-                if (voteAgainstParty) no++; 
-                else yes++;
+                if (voteAgainstParty) no++; else { if(score > 50) yes++; else no++; } // Check score for normal MPs
             } else if (mp.party.status === "Opposition") {
-                if (voteAgainstParty) yes++; 
-                else no++;
+                if (voteAgainstParty) yes++; else no++;
             } else {
                 if (score > 50) yes++; else no++;
             }
