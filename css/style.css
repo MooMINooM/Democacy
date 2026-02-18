@@ -1,47 +1,75 @@
 :root {
-    --paper: #f4f1ea;
-    --ink: #1a1a1a;
-    --accent: #dc2626;
+    --paper: #f4f1ea;      /* สีพื้นหลังกระดาษ */
+    --ink: #1a1a1a;        /* สีหมึกดำ */
+    --ink-light: #4b5563;  /* สีหมึกจาง (Gray 600) */
+    --accent: #b91c1c;     /* สีแดงเข้ม (Red 700) */
+    --border: #262626;     /* สีขอบ (Neutral 800) */
 }
+
 body {
     font-family: 'Sarabun', sans-serif;
-    background-color: #0b0c10;
-    color: var(--paper);
+    background-color: var(--paper);
+    color: var(--ink);
     overflow: hidden;
 }
+
 .serif { font-family: 'Noto Serif Thai', serif; }
+
+/* พื้นหลังกระดาษหนังสือพิมพ์ */
 .newspaper-bg {
     background-color: var(--paper);
     color: var(--ink);
-    box-shadow: inset 0 0 100px rgba(0,0,0,0.1);
+    background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E");
 }
-.tab-active { color: var(--accent); background: rgba(220, 38, 38, 0.15); border-right: 3px solid var(--accent); }
-.scroll-custom::-webkit-scrollbar { width: 5px; }
-.scroll-custom::-webkit-scrollbar-track { background: transparent; }
-.scroll-custom::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
 
-.progress-fill { transition: width 0.5s linear; }
-.voting-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin: 1px; }
+/* Hard Shadow แบบสิ่งพิมพ์ยุคเก่า */
+.retro-shadow {
+    box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.8);
+    border: 2px solid var(--ink);
+}
 
+.retro-shadow-sm {
+    box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--ink);
+}
+
+/* Sidebar & Tabs */
+.tab-active { 
+    color: var(--accent); 
+    background: #e5e5e5; 
+    border-right: 4px solid var(--accent); 
+    font-weight: bold;
+}
+
+/* Custom Scrollbar */
+.scroll-custom::-webkit-scrollbar { width: 6px; }
+.scroll-custom::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+.scroll-custom::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+/* Voting Dots */
+.voting-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin: 1px; border: 1px solid rgba(0,0,0,0.1); }
+
+/* Animation */
 @keyframes pulse-red {
-    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
-    70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0.4); }
+    70% { box-shadow: 0 0 0 6px rgba(185, 28, 28, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0); }
 }
 .is-running { animation: pulse-red 2s infinite; }
 
-.radio-card.selected { background-color: #e5e7eb; border-color: var(--accent) !important; box-shadow: 0 0 8px rgba(220, 38, 38, 0.2); }
-.party-card.selected { background-color: #e5e7eb; border: 2px solid #000; }
+/* Cards */
+.paper-card {
+    background-color: #fff;
+    border: 1px solid #d1d5db;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.radio-card.selected { background-color: #f3f4f6; border-color: var(--ink) !important; box-shadow: 2px 2px 0 var(--ink); }
+.party-card.selected { background-color: #f3f4f6; border: 2px solid var(--ink); }
 
-.vote-bar-yes { background: #10b981; transition: width 1s ease-out; }
-.vote-bar-no { background: #ef4444; transition: width 1s ease-out; }
+/* Tags */
+.govt-tag { background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; border: 1px solid #93c5fd; }
+.opp-tag { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; border: 1px solid #fca5a5; }
+.neu-tag { background: #f3f4f6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; border: 1px solid #d1d5db; }
 
-.badge-ideology { background: #1e293b; color: #93c5fd; padding: 1px 6px; border-radius: 4px; font-size: 8px; margin: 1px; display: inline-block; border: 1px solid rgba(255,255,255,0.1); }
-.badge-goal { background: #450a0a; color: #fca5a5; padding: 1px 6px; border-radius: 4px; font-size: 8px; margin: 1px; display: inline-block; border: 1px solid rgba(255,0,0,0.1); }
-
-.govt-tag { background: #1e3a8a; color: #93c5fd; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; }
-.opp-tag { background: #7f1d1d; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; }
-.neu-tag { background: #374151; color: #d1d5db; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; }
-
-.sidebar-item:hover .tooltip { opacity: 1; transform: translateX(10px); }
 .tooltip { pointer-events: none; transition: all 0.2s; opacity: 0; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); white-space: nowrap; z-index: 50; }
+.sidebar-item:hover .tooltip { opacity: 1; transform: translateX(10px); }
