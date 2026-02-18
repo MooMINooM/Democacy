@@ -17,7 +17,7 @@ export const ui = {
     },
     updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); if(!document.getElementById('tab-mps').classList.contains('hidden')) this.renderMPList(); },
     
-    // --- Helper: Create Icon with Tooltip ---
+    // --- Helper: สร้างไอคอนพร้อม Tooltip (ใช้ได้ทั้งหน้ารายชื่อและหน้าแต่งตั้ง) ---
     createIcon(iconClass, colorClass, title, subtitle = "") {
         return `
             <div class="group relative inline-flex items-center justify-center w-8 h-8 bg-zinc-800 rounded-full border border-zinc-700 hover:bg-zinc-700 cursor-help transition">
@@ -31,6 +31,7 @@ export const ui = {
         `;
     },
 
+    // --- Render หน้าทำเนียบ สส. ---
     renderMPList() {
         const cont = document.getElementById('mp-roster-list'); if(!cont) return;
         const filterVal = document.getElementById('mp-search-input')?.value.toLowerCase() || "";
@@ -91,7 +92,7 @@ export const ui = {
         cont.innerHTML = html;
     },
 
-    // --- UPGRADED: Cabinet Appointment Modal (Similar to Roster) ---
+    // --- UPGRADED: หน้าต่างเลือก ครม. แบบละเอียด (เหมือนทำเนียบ) ---
     showAppointModal(mName) {
         this.resetModalState();
         
@@ -108,7 +109,7 @@ export const ui = {
                 </thead>
                 <tbody class="divide-y divide-zinc-800">`;
 
-        // Filter only MPs from Government parties
+        // กรองเฉพาะ สส. พรรคร่วมรัฐบาล (Government)
         const govtParties = state.parties.filter(p => p.status === "Government");
         let candidateCount = 0;
 
@@ -118,7 +119,7 @@ export const ui = {
                 candidateCount++;
                 const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
                 
-                // Icons for Cabinet Selection
+                // สร้างไอคอนสำหรับหน้าเลือก ครม.
                 const ideologyIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', l.trait.ideology);
                 const abilityIcon = this.createIcon(l.trait.ability.icon, 'text-orange-400', l.trait.ability.name, l.trait.ability.desc);
                 const goalIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', l.trait.goal);
