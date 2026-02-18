@@ -1,3 +1,4 @@
+// --- EXISTING FACTION DATA (Keep as is) ---
 export const FACTION_DATA = [
     { name: "กองทัพ", weight: 80, wealth: 70, basePop: 300000, icon: "fa-shield-halved" },
     { name: "หัวก้าวหน้า", weight: 60, wealth: 30, basePop: 5000000, icon: "fa-bolt" },
@@ -17,11 +18,54 @@ export const FACTION_DATA = [
     { name: "ท้องถิ่น", weight: 40, wealth: 30, basePop: 7000000, icon: "fa-house-user" },
     { name: "ข้าราชการ", weight: 70, wealth: 40, basePop: 3000000, icon: "fa-id-card" }
 ];
-
 export const FACTION_NAMES = FACTION_DATA.map(f => f.name);
 
-export const IDEOLOGY_POOL = ["เสรีนิยม", "ชาตินิยม", "อำนาจนิยม", "ประชาธิปไตย", "สังคมนิยม", "ฟาสซิสต์", "คอมมิวนิสต์", "ศาสนานิยม", "ฆราวาสนิยม", "อนุรักษ์นิยม", "โลกาภิวัตน์", "การแยกตัว", "หัวก้าวหน้า", "ประชานิยม", "สิทธิมนุษยชน"];
-export const GOAL_POOL = ["การศึกษา", "เศรษฐกิจ", "ต่างประเทศ", "สิ่งแวดล้อม", "การเกษตร", "การทหาร", "เทคโนโลยี", "สาธารณสุข", "ความยุติธรรม", "ทรัพยากร", "อุตสาหกรรม", "ท่องเที่ยว", "คุณภาพชีวิต", "สวัสดิการแรงงาน", "สะสมทุน", "ความมั่นคงทางอาหาร", "สิทธิพลเมือง"];
+// --- 1. ด้านแนวคิด (IDEOLOGY) ---
+export const IDEOLOGY_POOL = [
+    "เสรีนิยม", "ชาตินิยม", "อำนาจนิยม", "ประชาธิปไตย", "สังคมนิยม", 
+    "ฟาสซิสต์", "คอมมิวนิสต์", "ศาสนานิยม", "ฆราวาสนิยม", "อนุรักษ์นิยม", 
+    "โลกาภิวัตน์", "การแยกตัว", "หัวก้าวหน้า", "ประชานิยม", "สิทธิมนุษยชน"
+];
+
+// --- 2. ด้านเป้าหมาย (GOAL) ---
+export const GOAL_POOL = [
+    "การศึกษา", "เศรษฐกิจ", "การต่างประเทศ", "สิ่งแวดล้อม", "การเกษตร", 
+    "การทหาร", "เทคโนโลยี", "สาธารณสุข", "ความยุติธรรม", "การอนุรักษ์ทรัพยากร", 
+    "อุตสาหกรรมและการส่งออก", "การท่องเที่ยว", "คุณภาพชีวิต", "สวัสดิการแรงงาน", 
+    "การสะสมทุน", "ความมั่นคงทางอาหาร", "สิทธิพลเมือง"
+];
+
+// --- 3. ด้านความสามารถ (ABILITY) ---
+// costMod: ตัวคูณราคาค่าตัว, influence: ผลต่อคะแนนเสียง
+export const ABILITY_POOL = [
+    { name: "การสื่อสารภาษาต่างประเทศ", costMod: 1.2, desc: "เจรจาต่างชาติได้ดี" },
+    { name: "การรับมือสื่อสาธารณะ", costMod: 1.5, desc: "แก้ข่าวเก่ง ลดความเสียหาย" },
+    { name: "การพูดชักจูง", costMod: 1.4, desc: "เพิ่มโอกาสโหวตชนะ" },
+    { name: "การระดมพล", costMod: 1.3, desc: "เรียกม็อบได้" },
+    { name: "การเงิน", costMod: 1.5, desc: "หาเงินทุนเข้าพรรคเก่ง" },
+    { name: "บารมี", costMod: 2.0, desc: "อิทธิพลสูง คุมเสียงได้" },
+    { name: "เครือข่ายความสัมพันธ์", costMod: 1.8, desc: "รู้ข่าวงูเห่าเร็ว" },
+    { name: "การคิดวิเคราะห์", costMod: 1.2, desc: "วางแผนแม่นยำ" },
+    { name: "ความเชี่ยวชาญเฉพาะทาง", costMod: 1.3, desc: "ร่างกฎหมายผ่านง่าย" },
+    { name: "การคอรัปชั่น", costMod: 0.5, desc: "ซื้อตัวง่ายมาก" },
+    { name: "ความยืดหยุ่นทางอุดมการณ์", costMod: 0.8, desc: "ย้ายพรรคง่าย" },
+    { name: "ความเด็ดขาด", costMod: 1.5, desc: "ไม่ค่อยโหวตสวน" },
+    { name: "การบริหารจัดการ", costMod: 1.4, desc: "เพิ่มประสิทธิภาพกระทรวง" },
+    { name: "การต่างประเทศ", costMod: 1.3, desc: "ภาพลักษณ์ดี" }
+];
+
+// --- 4. ด้านสถานะทางสังคม/ที่มาของรายได้ (SOCIO-ECONOMIC) ---
+// baseWealth: ฐานะการเงิน (M), costMod: ความยากในการซื้อ (คนรวยซื้อยากกว่า)
+export const SOCIO_POOL = [
+    { name: "เกษตรกร", baseWealth: 5, costMod: 0.8 },
+    { name: "มนุษย์เงินเดือน(เอกชน)", baseWealth: 10, costMod: 1.0 },
+    { name: "เจ้าของธุรกิจขนาดใหญ่", baseWealth: 500, costMod: 3.0 },
+    { name: "แรงงาน", baseWealth: 3, costMod: 0.7 },
+    { name: "เจ้าของธุรกิจขนาดเล็ก", baseWealth: 20, costMod: 1.2 },
+    { name: "อดีตข้าราชการ", baseWealth: 15, costMod: 1.1 },
+    { name: "อาชีพอิสระ", baseWealth: 8, costMod: 0.9 },
+    { name: "นักวิชาการ", baseWealth: 12, costMod: 1.5 }
+];
 
 export const IDEOLOGY_CONFLICTS = {
     "เสรีนิยม": ["อำนาจนิยม", "ฟาสซิสต์"],
@@ -40,24 +84,13 @@ export let ALL_MP_NAMES = [];
 THAI_NAMES.forEach(f => THAI_SURNAMES.forEach(l => ALL_MP_NAMES.push(`สส.${f} ${l}`)));
 ALL_MP_NAMES.sort(() => Math.random() - 0.5);
 
+// Player Backgrounds (Keep for compatibility)
 export const BACKGROUNDS = [
     { id: "politician", name: "นักการเมืองอาชีพ", desc: "เข้าใจกลไกพรรคการเมือง", traits: ["เครือข่าย +20", "เจรจา +15"] },
     { id: "academic", name: "นักวิชาการ", desc: "เน้นข้อมูลและหลักการนโยบาย", traits: ["นโยบาย +25", "อภิปราย +15"] },
     { id: "business", name: "นักธุรกิจ", desc: "เน้นประสิทธิภาพการบริหารเงิน", traits: ["ทุน +30", "Elite +20"] },
     { id: "civil_servant", name: "อดีตข้าราชการ", desc: "เชี่ยวชาญราชการและกลไกแผ่นดิน", traits: ["บริหาร +25", "เสถียรภาพ +10"] },
     { id: "military", name: "อดีตผู้นำเหล่าทัพ", desc: "เน้นระเบียบวินัยและความมั่นคง", traits: ["ทหาร +40", "ต้านคูป +50"] }
-];
-
-// NEW: MP Personality Traits
-export const MP_TRAITS = [
-    { name: "หน้าเงิน", desc: "ซื้อตัวง่าย แต่ไม่ภักดี", costMod: 0.6, loyaltyMod: 0.5 },
-    { name: "อุดมการณ์สูง", desc: "ซื้อยากมาก ภักดีต่อจุดยืน", costMod: 2.5, loyaltyMod: 1.5 },
-    { name: "เจ้าเล่ห์", desc: "รับเงินแต่มีโอกาสหักหลัง", costMod: 0.8, loyaltyMod: 0.8 },
-    { name: "หัวอ่อน", desc: "คล้อยตามง่าย", costMod: 0.7, loyaltyMod: 1.0 },
-    { name: "ผู้มีอิทธิพล", desc: "แพงแต่คุมเสียงได้", costMod: 2.0, loyaltyMod: 1.0 },
-    { name: "คนดี", desc: "ไม่รับสินบน", costMod: 999, loyaltyMod: 2.0 }, // Impossible to buy
-    { name: "นักพนัน", desc: "ต้องการเงินด่วน", costMod: 0.4, loyaltyMod: 0.4 },
-    { name: "ทะเยอทะยาน", desc: "ยอมย้ายถ้าพรรคใหญ่กว่า", costMod: 1.0, loyaltyMod: 0.7 }
 ];
 
 export const MINISTRIES = {
