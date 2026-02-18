@@ -21,10 +21,32 @@ export const ui = {
         const cont = document.getElementById('mp-roster-list'); if(!cont) return;
         const filterVal = document.getElementById('mp-search-input')?.value.toLowerCase() || "";
         const filtered = state.leaders.filter(l => l.name.toLowerCase().includes(filterVal) || l.party.name.toLowerCase().includes(filterVal));
-        let html = `<table class="w-full text-left font-sans text-xs text-white border-collapse"><thead class="bg-black/50 text-zinc-400 uppercase tracking-wider sticky top-0"><tr><th class="p-3">ชื่อ - สกุล</th><th class="p-3">พรรคสังกัด</th><th class="p-3">กลุ่มอิทธิพล</th><th class="p-3 text-center">Loyalty</th><th class="p-3 text-center">Trait</th><th class="p-3 text-center">จัดการ</th></tr></thead><tbody class="divide-y divide-zinc-800">`;
+        
+        let html = `<table class="w-full text-left font-sans text-xs text-white border-collapse">
+            <thead class="bg-black/50 text-zinc-400 uppercase tracking-wider sticky top-0">
+                <tr>
+                    <th class="p-3">ชื่อ - สกุล</th>
+                    <th class="p-3">พรรคสังกัด</th>
+                    <th class="p-3">แนวคิด (Ideology)</th>
+                    <th class="p-3">อาชีพเดิม</th>
+                    <th class="p-3 text-center">Loyalty</th>
+                    <th class="p-3 text-center">จัดการ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800">`;
+
         filtered.slice(0, 100).forEach(l => { 
             const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
-            html += `<tr class="hover:bg-zinc-800/50 transition"><td class="p-3 font-bold">${l.name} ${l.isCobra ? '<span class="text-red-500 animate-pulse text-[10px] ml-1">(งูเห่า)</span>' : ''}</td><td class="p-3"><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${l.party.color}"></div>${l.party.name}</div></td><td class="p-3 opacity-70">${l.status}</td><td class="p-3 text-center font-bold ${loyaltyColor}">${l.loyalty.toFixed(0)}%</td><td class="p-3 text-center"><span class="px-2 py-0.5 rounded bg-zinc-700 text-zinc-300 text-[10px]">${l.trait.name}</span></td><td class="p-3 text-center"><button onclick="ui.showMPActionModal(${l.id})" class="bg-zinc-700 hover:bg-zinc-600 px-3 py-1 rounded text-[10px] transition">ดีล</button></td></tr>`;
+            html += `<tr class="hover:bg-zinc-800/50 transition">
+                <td class="p-3 font-bold">${l.name} ${l.isCobra ? '<span class="text-red-500 animate-pulse text-[10px] ml-1">(งูเห่า)</span>' : ''}</td>
+                <td class="p-3"><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${l.party.color}"></div>${l.party.name}</div></td>
+                <td class="p-3 opacity-70">${l.trait.ideology}</td>
+                <td class="p-3 text-zinc-400">${l.trait.socio.name}</td>
+                <td class="p-3 text-center font-bold ${loyaltyColor}">${l.loyalty.toFixed(0)}%</td>
+                <td class="p-3 text-center">
+                    <button onclick="ui.showMPActionModal(${l.id})" class="bg-zinc-700 hover:bg-zinc-600 px-3 py-1 rounded text-[10px] transition">ดูข้อมูล/ดีล</button>
+                </td>
+            </tr>`;
         });
         html += `</tbody></table>`;
         if(filtered.length > 100) html += `<div class="p-2 text-center text-zinc-500 italic text-[10px]">แสดง 100 จาก ${filtered.length} รายชื่อ (กรุณาค้นหาเพิ่มเติม)</div>`;
@@ -34,9 +56,58 @@ export const ui = {
     showMPActionModal(id) {
         this.resetModalState();
         const l = state.leaders.find(x => x.id === id); if(!l) return;
-        document.getElementById('event-title').innerText = `ข้อมูลเชิงลึก: ${l.name}`;
-        const lobbyCost = 2000000; const cobraCost = 10000000 * l.trait.costMod; const switchCost = 50000000 * l.trait.costMod; const isMyParty = l.party.id === state.player.party.id;
-        document.getElementById('event-desc').innerHTML = `<div class="grid grid-cols-2 gap-6 text-left font-sans mb-6"><div class="bg-black/40 p-4 rounded-xl border border-zinc-700"><div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">ข้อมูลทั่วไป</div><div class="mb-1">พรรค: <span style="color:${l.party.color}" class="font-bold">${l.party.name}</span></div><div class="mb-1">ฐานเสียง: <span class="text-white font-bold">${l.status}</span></div><div class="mb-1">ทรัพย์สินส่วนตัว: <span class="text-emerald-400 font-bold">฿${l.cash}M</span></div><div class="mt-2 text-xs bg-zinc-800 p-2 rounded">นิสัย: <b>${l.trait.name}</b> (${l.trait.desc})</div></div><div class="bg-black/40 p-4 rounded-xl border border-zinc-700"><div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">สถานะความสัมพันธ์</div><div class="flex justify-between mb-1"><span>Loyalty:</span> <span class="font-bold text-yellow-500">${l.loyalty.toFixed(0)}%</span></div><div class="flex justify-between mb-1"><span>Prestige:</span> <span class="font-bold text-blue-400">${l.prestige}</span></div><div class="mt-2 text-center text-xs ${l.isCobra ? 'text-red-500 font-bold' : 'text-zinc-500'}">${l.isCobra ? '● สถานะ: งูเห่า (รับเงินแล้ว)' : '● สถานะ: ปกติ'}</div></div></div><div class="grid grid-cols-1 gap-3"><button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-3 rounded border border-zinc-700 transition group"><span class="font-bold text-sm text-white group-hover:text-emerald-400">🤝 กระชับความสัมพันธ์ (Lobby)</span><span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span></button><button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-3 rounded border border-zinc-700 transition group"'}><span class="font-bold text-sm text-white group-hover:text-red-400">🐍 ซื้อตัวงูเห่า (Secret Deal)</span><span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span></button><button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-3 rounded border border-zinc-700 transition group"'}><span class="font-bold text-sm text-white group-hover:text-purple-400">🔄 ดูดเข้าพรรค (Force Switch)</span><span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span></button></div>`;
+        
+        document.getElementById('event-title').innerText = `แฟ้มประวัติ: ${l.name}`;
+        
+        const lobbyCost = 2000000 * l.trait.socio.costMod;
+        const cobraCost = 10000000 * l.trait.ability.costMod * l.trait.socio.costMod;
+        const switchCost = 50000000 * l.trait.ability.costMod * l.trait.socio.costMod;
+        const isMyParty = l.party.id === state.player.party.id;
+
+        document.getElementById('event-desc').innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left font-sans mb-6 text-white">
+                <div class="bg-black/40 p-4 rounded-xl border border-zinc-700 space-y-2">
+                    <div class="text-[10px] text-zinc-500 uppercase font-bold border-b border-zinc-800 pb-1 mb-2">ข้อมูลส่วนบุคคล</div>
+                    <div><span class="text-zinc-400 text-xs">พรรคสังกัด:</span> <span style="color:${l.party.color}" class="font-bold ml-2">${l.party.name}</span></div>
+                    <div><span class="text-zinc-400 text-xs">ฐานเสียง:</span> <span class="ml-2">${l.status}</span></div>
+                    <div><span class="text-zinc-400 text-xs">ทรัพย์สิน:</span> <span class="text-emerald-400 font-bold ml-2">฿${(l.cash/1e6).toFixed(1)}M</span></div>
+                    <div class="bg-zinc-800/50 p-2 rounded mt-2">
+                        <div class="text-xs text-zinc-300">อาชีพ: <b>${l.trait.socio.name}</b></div>
+                        <div class="text-[10px] text-zinc-500">Wealth Factor: x${l.trait.socio.costMod}</div>
+                    </div>
+                </div>
+
+                <div class="bg-black/40 p-4 rounded-xl border border-zinc-700 space-y-2">
+                    <div class="text-[10px] text-zinc-500 uppercase font-bold border-b border-zinc-800 pb-1 mb-2">คุณลักษณะ (Traits)</div>
+                    <div><span class="text-blue-400 text-xs">แนวคิด:</span> <span class="ml-1">${l.trait.ideology}</span></div>
+                    <div><span class="text-purple-400 text-xs">เป้าหมาย:</span> <span class="ml-1">${l.trait.goal}</span></div>
+                    <div class="bg-zinc-800/50 p-2 rounded mt-2">
+                        <div class="text-xs text-orange-300">ความสามารถ: <b>${l.trait.ability.name}</b></div>
+                        <div class="text-[10px] text-zinc-500">${l.trait.ability.desc}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-zinc-900 p-3 rounded-lg border border-zinc-800 mb-4 flex justify-between items-center">
+                <div class="text-xs text-zinc-400">สถานะความภักดี (Loyalty)</div>
+                <div class="text-xl font-bold ${l.loyalty > 50 ? 'text-emerald-500' : 'text-red-500'}">${l.loyalty.toFixed(0)}%</div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3">
+                <button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-3 rounded border border-zinc-700 transition group">
+                    <span class="font-bold text-sm text-white group-hover:text-emerald-400">🤝 กระชับความสัมพันธ์ (Lobby)</span>
+                    <span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span>
+                </button>
+                <button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-3 rounded border border-zinc-700 transition group"'} >
+                    <span class="font-bold text-sm text-white group-hover:text-red-400">🐍 ซื้อตัวงูเห่า (Secret Deal)</span>
+                    <span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span>
+                </button>
+                <button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-3 rounded border border-zinc-700 transition group"'} >
+                    <span class="font-bold text-sm text-white group-hover:text-purple-400">🔄 ดูดเข้าพรรค (Force Switch)</span>
+                    <span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span>
+                </button>
+            </div>
+        `;
         document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden');" class="w-full p-3 bg-zinc-900 rounded text-zinc-400 hover:bg-zinc-800">ปิดหน้าต่าง</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
     },
@@ -149,8 +220,6 @@ export const ui = {
     },
     renderCabinet() { const cont = document.getElementById('cabinet-list'); if(!cont) return; cont.innerHTML = ""; Object.entries(Data.MINISTRIES).forEach(([n, d]) => { const m = d.currentMinister; const el = document.createElement('div'); el.className = "bg-black/30 p-5 rounded-xl border border-zinc-800 text-center text-white shadow-xl"; el.innerHTML = `<div class="text-[9px] text-zinc-500 uppercase mb-3 font-bold tracking-widest border-b border-zinc-800 pb-2">รมว.${n}</div><div class="${m ? 'font-bold text-sm text-yellow-500' : 'text-zinc-700 italic text-xs'} mb-1 font-sans">${m ? m.name : 'ว่าง'}</div><div class="text-[8px] text-zinc-600 mb-4 font-sans">${m ? m.party.name : 'รอแต่งตั้ง'}</div><button onclick="ui.showAppointModal('${n}')" class="w-full text-[9px] bg-zinc-800 hover:bg-zinc-700 px-2 py-2 rounded font-bold transition font-sans">แต่งตั้ง</button>`; cont.appendChild(el); }); },
     renderMinistryList() { const cont = document.getElementById('ministry-list'); if(!cont) return; cont.innerHTML = ""; Object.entries(Data.MINISTRIES).forEach(([n, d]) => { const btn = document.createElement('div'); btn.className = "p-4 rounded-xl border border-zinc-800 transition flex items-center gap-3 bg-[#1a1c23] cursor-pointer hover:bg-zinc-800 shadow-md text-white font-sans text-xs"; btn.innerHTML = `<i class="fas ${d.icon} text-red-500 w-4 text-center"></i> ${n}`; btn.onclick = () => this.showPolicyBank(n); cont.appendChild(btn); }); },
-    
-    // --- FIX: Use string name instead of JSON object ---
     showPolicyBank(mName) { 
         this.resetModalState(); 
         const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName); 
@@ -165,7 +234,6 @@ export const ui = {
         document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-800 rounded-xl text-zinc-400 font-bold font-sans">ยกเลิก</button>`; 
         document.getElementById('event-modal').classList.remove('hidden'); 
     },
-    
     renderNews() { const cont = document.getElementById('news-feed'); if(!cont) return; cont.innerHTML = state.news.slice(0, 10).map(n => `<div class="border-b border-zinc-800/50 pb-3 last:border-0 font-sans text-white"><div class="text-[9px] text-zinc-600 mb-1 uppercase font-mono">${n.date}</div><h4 class="font-bold text-zinc-200 text-[10px] font-sans">● ${n.headline}</h4></div>`).join(""); if (state.news.length > 0) { document.getElementById('news-headline').innerText = state.news[0].headline; document.getElementById('news-body').innerText = state.news[0].body; } },
     resetModalState() { document.getElementById('voting-display').classList.add('hidden'); document.getElementById('stakeholder-reactions').classList.add('hidden'); document.getElementById('event-options').innerHTML = ""; document.getElementById('event-desc').innerHTML = ""; }
 };
