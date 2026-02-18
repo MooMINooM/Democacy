@@ -8,7 +8,7 @@ export const ui = {
         const target = document.getElementById(`tab-${t}`); if(target) target.classList.remove('hidden');
         document.querySelectorAll('.tab-btn').forEach(b => { const clickAttr = b.getAttribute('onclick'); b.classList.toggle('tab-active', clickAttr && clickAttr.includes(t)); });
         if (t === 'dashboard') setTimeout(() => this.renderTrendGraphs(), 100);
-        if (t === 'mps') this.renderMPList(); // Refresh MP list on tab switch
+        if (t === 'mps') this.renderMPList(); 
     },
     updateHUD() {
         const els = { 'hud-date': state.date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }), 'hud-budget': `฿${(state.world.nationalBudget / 1e12).toFixed(2)}T`, 'hud-approval-text': `${state.world.approval.toFixed(0)}%`, 'hud-personal-display': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'hud-personal-sidebar': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'hud-personal-top': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'stat-cabinet-stability-display': `เสถียรภาพ ครม: ${state.world.cabinetStability}%`, 'stat-cabinet-stability-hud': `${state.world.cabinetStability}%`, 'stat-growth-sidebar': `${state.world.growth > 0 ? '+' : ''}${state.world.growth.toFixed(1)}%` };
@@ -17,42 +17,14 @@ export const ui = {
     },
     updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); if(!document.getElementById('tab-mps').classList.contains('hidden')) this.renderMPList(); },
     
-    // --- NEW: MP Management Tab ---
     renderMPList() {
         const cont = document.getElementById('mp-roster-list'); if(!cont) return;
-        
-        // Filter Logic (Simple Search)
         const filterVal = document.getElementById('mp-search-input')?.value.toLowerCase() || "";
-        
         const filtered = state.leaders.filter(l => l.name.toLowerCase().includes(filterVal) || l.party.name.toLowerCase().includes(filterVal));
-        
-        let html = `<table class="w-full text-left font-sans text-xs text-white border-collapse">
-            <thead class="bg-black/50 text-zinc-400 uppercase tracking-wider sticky top-0">
-                <tr>
-                    <th class="p-3">ชื่อ - สกุล</th>
-                    <th class="p-3">พรรคสังกัด</th>
-                    <th class="p-3">กลุ่มอิทธิพล</th>
-                    <th class="p-3 text-center">Loyalty</th>
-                    <th class="p-3 text-center">Trait</th>
-                    <th class="p-3 text-center">จัดการ</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-zinc-800">`;
-
-        filtered.slice(0, 100).forEach(l => { // Limit render for performance
+        let html = `<table class="w-full text-left font-sans text-xs text-white border-collapse"><thead class="bg-black/50 text-zinc-400 uppercase tracking-wider sticky top-0"><tr><th class="p-3">ชื่อ - สกุล</th><th class="p-3">พรรคสังกัด</th><th class="p-3">กลุ่มอิทธิพล</th><th class="p-3 text-center">Loyalty</th><th class="p-3 text-center">Trait</th><th class="p-3 text-center">จัดการ</th></tr></thead><tbody class="divide-y divide-zinc-800">`;
+        filtered.slice(0, 100).forEach(l => { 
             const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
-            const traitBadge = `<span class="px-2 py-0.5 rounded bg-zinc-700 text-zinc-300 text-[10px]">${l.trait.name}</span>`;
-            
-            html += `<tr class="hover:bg-zinc-800/50 transition">
-                <td class="p-3 font-bold">${l.name} ${l.isCobra ? '<span class="text-red-500 animate-pulse text-[10px] ml-1">(งูเห่า)</span>' : ''}</td>
-                <td class="p-3"><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${l.party.color}"></div>${l.party.name}</div></td>
-                <td class="p-3 opacity-70">${l.status}</td>
-                <td class="p-3 text-center font-bold ${loyaltyColor}">${l.loyalty.toFixed(0)}%</td>
-                <td class="p-3 text-center">${traitBadge}</td>
-                <td class="p-3 text-center">
-                    <button onclick="ui.showMPActionModal(${l.id})" class="bg-zinc-700 hover:bg-zinc-600 px-3 py-1 rounded text-[10px] transition">ดีล</button>
-                </td>
-            </tr>`;
+            html += `<tr class="hover:bg-zinc-800/50 transition"><td class="p-3 font-bold">${l.name} ${l.isCobra ? '<span class="text-red-500 animate-pulse text-[10px] ml-1">(งูเห่า)</span>' : ''}</td><td class="p-3"><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${l.party.color}"></div>${l.party.name}</div></td><td class="p-3 opacity-70">${l.status}</td><td class="p-3 text-center font-bold ${loyaltyColor}">${l.loyalty.toFixed(0)}%</td><td class="p-3 text-center"><span class="px-2 py-0.5 rounded bg-zinc-700 text-zinc-300 text-[10px]">${l.trait.name}</span></td><td class="p-3 text-center"><button onclick="ui.showMPActionModal(${l.id})" class="bg-zinc-700 hover:bg-zinc-600 px-3 py-1 rounded text-[10px] transition">ดีล</button></td></tr>`;
         });
         html += `</tbody></table>`;
         if(filtered.length > 100) html += `<div class="p-2 text-center text-zinc-500 italic text-[10px]">แสดง 100 จาก ${filtered.length} รายชื่อ (กรุณาค้นหาเพิ่มเติม)</div>`;
@@ -61,74 +33,25 @@ export const ui = {
 
     showMPActionModal(id) {
         this.resetModalState();
-        const l = state.leaders.find(x => x.id === id);
-        if(!l) return;
-        
+        const l = state.leaders.find(x => x.id === id); if(!l) return;
         document.getElementById('event-title').innerText = `ข้อมูลเชิงลึก: ${l.name}`;
-        
-        // Calculate Costs
-        const lobbyCost = 2000000;
-        const cobraCost = 10000000 * l.trait.costMod;
-        const switchCost = 50000000 * l.trait.costMod;
-
-        const isMyParty = l.party.id === state.player.party.id;
-
-        document.getElementById('event-desc').innerHTML = `
-            <div class="grid grid-cols-2 gap-6 text-left font-sans mb-6">
-                <div class="bg-black/40 p-4 rounded-xl border border-zinc-700">
-                    <div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">ข้อมูลทั่วไป</div>
-                    <div class="mb-1">พรรค: <span style="color:${l.party.color}" class="font-bold">${l.party.name}</span></div>
-                    <div class="mb-1">ฐานเสียง: <span class="text-white font-bold">${l.status}</span></div>
-                    <div class="mb-1">ทรัพย์สินส่วนตัว: <span class="text-emerald-400 font-bold">฿${l.cash}M</span></div>
-                    <div class="mt-2 text-xs bg-zinc-800 p-2 rounded">นิสัย: <b>${l.trait.name}</b> (${l.trait.desc})</div>
-                </div>
-                <div class="bg-black/40 p-4 rounded-xl border border-zinc-700">
-                    <div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">สถานะความสัมพันธ์</div>
-                    <div class="flex justify-between mb-1"><span>Loyalty:</span> <span class="font-bold text-yellow-500">${l.loyalty.toFixed(0)}%</span></div>
-                    <div class="flex justify-between mb-1"><span>Prestige:</span> <span class="font-bold text-blue-400">${l.prestige}</span></div>
-                    <div class="mt-2 text-center text-xs ${l.isCobra ? 'text-red-500 font-bold' : 'text-zinc-500'}">${l.isCobra ? '● สถานะ: งูเห่า (รับเงินแล้ว)' : '● สถานะ: ปกติ'}</div>
-                </div>
-            </div>
-            <div class="grid grid-cols-1 gap-3">
-                <button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-3 rounded border border-zinc-700 transition group">
-                    <span class="font-bold text-sm text-white group-hover:text-emerald-400">🤝 กระชับความสัมพันธ์ (Lobby)</span>
-                    <span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span>
-                </button>
-                <button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-3 rounded border border-zinc-700 transition group"'} >
-                    <span class="font-bold text-sm text-white group-hover:text-red-400">🐍 ซื้อตัวงูเห่า (Secret Deal)</span>
-                    <span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span>
-                </button>
-                <button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-3 rounded border border-zinc-700 transition group"'} >
-                    <span class="font-bold text-sm text-white group-hover:text-purple-400">🔄 ดูดเข้าพรรค (Force Switch)</span>
-                    <span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span>
-                </button>
-            </div>
-        `;
+        const lobbyCost = 2000000; const cobraCost = 10000000 * l.trait.costMod; const switchCost = 50000000 * l.trait.costMod; const isMyParty = l.party.id === state.player.party.id;
+        document.getElementById('event-desc').innerHTML = `<div class="grid grid-cols-2 gap-6 text-left font-sans mb-6"><div class="bg-black/40 p-4 rounded-xl border border-zinc-700"><div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">ข้อมูลทั่วไป</div><div class="mb-1">พรรค: <span style="color:${l.party.color}" class="font-bold">${l.party.name}</span></div><div class="mb-1">ฐานเสียง: <span class="text-white font-bold">${l.status}</span></div><div class="mb-1">ทรัพย์สินส่วนตัว: <span class="text-emerald-400 font-bold">฿${l.cash}M</span></div><div class="mt-2 text-xs bg-zinc-800 p-2 rounded">นิสัย: <b>${l.trait.name}</b> (${l.trait.desc})</div></div><div class="bg-black/40 p-4 rounded-xl border border-zinc-700"><div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">สถานะความสัมพันธ์</div><div class="flex justify-between mb-1"><span>Loyalty:</span> <span class="font-bold text-yellow-500">${l.loyalty.toFixed(0)}%</span></div><div class="flex justify-between mb-1"><span>Prestige:</span> <span class="font-bold text-blue-400">${l.prestige}</span></div><div class="mt-2 text-center text-xs ${l.isCobra ? 'text-red-500 font-bold' : 'text-zinc-500'}">${l.isCobra ? '● สถานะ: งูเห่า (รับเงินแล้ว)' : '● สถานะ: ปกติ'}</div></div></div><div class="grid grid-cols-1 gap-3"><button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-3 rounded border border-zinc-700 transition group"><span class="font-bold text-sm text-white group-hover:text-emerald-400">🤝 กระชับความสัมพันธ์ (Lobby)</span><span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span></button><button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-3 rounded border border-zinc-700 transition group"'}><span class="font-bold text-sm text-white group-hover:text-red-400">🐍 ซื้อตัวงูเห่า (Secret Deal)</span><span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span></button><button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-3 rounded border border-zinc-800 flex justify-between"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-3 rounded border border-zinc-700 transition group"'}><span class="font-bold text-sm text-white group-hover:text-purple-400">🔄 ดูดเข้าพรรค (Force Switch)</span><span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span></button></div>`;
         document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden');" class="w-full p-3 bg-zinc-900 rounded text-zinc-400 hover:bg-zinc-800">ปิดหน้าต่าง</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
     },
 
-    // --- NEW: Vote Breakdown Visualizer ---
     showVoteBreakdown() {
         this.resetModalState();
         if(!state.lastVoteLog || state.lastVoteLog.length === 0) { alert("ยังไม่มีข้อมูลการโหวตล่าสุด"); return; }
-        
         document.getElementById('event-title').innerText = "บันทึกการลงคะแนนรายบุคคล";
-        
         let html = `<div class="max-h-[500px] overflow-y-auto scroll-custom p-2"><table class="w-full text-left text-xs font-sans text-white"><thead class="sticky top-0 bg-[#1a1c23]"><tr><th class="p-2">ชื่อ</th><th class="p-2">พรรค</th><th class="p-2 text-center">โหวต</th></tr></thead><tbody class="divide-y divide-zinc-800">`;
-        
         state.lastVoteLog.forEach(log => {
             const voteBadge = log.vote === 'yes' ? '<span class="bg-emerald-900 text-emerald-400 px-2 py-1 rounded text-[10px]">เห็นชอบ</span>' : (log.vote === 'no' ? '<span class="bg-red-900 text-red-400 px-2 py-1 rounded text-[10px]">ไม่เห็นชอบ</span>' : '<span class="bg-zinc-700 text-zinc-400 px-2 py-1 rounded text-[10px]">งดออกเสียง</span>');
             const rebelMark = log.isRebel ? '<i class="fas fa-exclamation-circle text-yellow-500 ml-2" title="โหวตสวนมติพรรค"></i>' : '';
-            
-            html += `<tr>
-                <td class="p-2">${log.name} ${rebelMark}</td>
-                <td class="p-2"><span style="color:${log.color}" class="font-bold">${log.party}</span></td>
-                <td class="p-2 text-center">${voteBadge}</td>
-            </tr>`;
+            html += `<tr><td class="p-2">${log.name} ${rebelMark}</td><td class="p-2"><span style="color:${log.color}" class="font-bold">${log.party}</span></td><td class="p-2 text-center">${voteBadge}</td></tr>`;
         });
         html += `</tbody></table></div>`;
-        
         document.getElementById('event-desc').innerHTML = html;
         document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-900 rounded text-zinc-400 hover:bg-zinc-800">ปิดบันทึก</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
@@ -140,15 +63,9 @@ export const ui = {
         document.getElementById('vote-count-yes').innerText = y; document.getElementById('vote-count-no').innerText = n;
         const passed = y > 250;
         document.getElementById('event-desc').innerText = passed ? "รัฐสภามีมติเห็นชอบรับหลักการ" : "สภาตีตกร่างกฎหมายเนื่องจากความไม่เหมาะสม";
-        
-        // ADDED BUTTON: "ดูรายชื่อโหวต"
-        document.getElementById('event-options').innerHTML = `
-            <button onclick="ui.showVoteBreakdown()" class="w-full p-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-bold text-zinc-300 font-sans mb-3 border border-zinc-700">🔍 ดูรายชื่อผู้ลงคะแนน (Check Votes)</button>
-            <button onclick="engine.finalizeVote('${p.name}', ${passed})" class="w-full p-4 bg-red-700 hover:bg-red-600 rounded-xl font-bold text-white transition font-sans">ยืนยันผลมติ</button>
-        `;
+        document.getElementById('event-options').innerHTML = `<button onclick="ui.showVoteBreakdown()" class="w-full p-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-bold text-zinc-300 font-sans mb-3 border border-zinc-700">🔍 ดูรายชื่อผู้ลงคะแนน (Check Votes)</button><button onclick="engine.finalizeVote('${p.name}', ${passed})" class="w-full p-4 bg-red-700 hover:bg-red-600 rounded-xl font-bold text-white transition font-sans">ยืนยันผลมติ</button>`;
     },
 
-    // Include previous Graph/Render functions...
     renderTrendGraphs() {
         const createRichChart = (id, data, color, label, unit) => {
             const wrapper = document.getElementById(id);
@@ -183,7 +100,6 @@ export const ui = {
         if (!document.getElementById('transparency-display')) { const parent = document.getElementById('my-party-goals').closest('.bg-\\[\\#1a1c23\\]'); if(parent) { const div = document.createElement('div'); div.id = 'transparency-display'; div.className = "mt-6 border-t border-zinc-700 pt-4"; parent.appendChild(div); } }
         const tDisp = document.getElementById('transparency-display'); if(tDisp) { const tVal = state.world.transparency; const tColor = tVal > 70 ? 'text-emerald-400' : (tVal > 40 ? 'text-yellow-500' : 'text-red-500 animate-pulse'); tDisp.innerHTML = `<div class="flex justify-between items-center"><span class="text-xs font-bold text-zinc-400 uppercase tracking-widest">ดัชนีความโปร่งใส (Transparency)</span><span class="font-mono font-bold ${tColor}">${tVal}%</span></div><div class="w-full bg-black h-2 rounded-full mt-2 overflow-hidden border border-zinc-700"><div class="h-full bg-white transition-all duration-500" style="width:${tVal}%"></div></div><div class="text-[9px] text-zinc-600 mt-2 italic text-right">ความเสี่ยงรัฐประหาร: ${tVal < 40 ? '<span class="text-red-500 font-bold">สูงมาก</span>' : '<span class="text-emerald-600">ต่ำ</span>'}</div>`; }
     },
-    // (Other render methods: renderParliament, renderCabinet, etc. remain the same from previous step, ensuring renderMPList is called appropriately)
     renderParliament() {
         const chart = document.getElementById('parliament-chart'); const table = document.getElementById('party-stat-table'); if(!chart || !table) return;
         chart.innerHTML = ""; table.innerHTML = "";
@@ -200,8 +116,7 @@ export const ui = {
             chart.appendChild(dot); 
         });
     },
-    // Standard Renders...
-    renderAI() { const cont = document.getElementById('ai-list'); if(cont) cont.innerHTML = ""; }, // Deprecated in favor of MP Tab
+    renderAI() { const cont = document.getElementById('ai-list'); if(cont) cont.innerHTML = ""; }, 
     renderMiniFactions() {
         const cont = document.getElementById('mini-faction-list'); if(!cont) return;
         const sorted = [...state.factions].sort((a,b) => b.weight - a.weight).slice(0, 5);
@@ -218,14 +133,39 @@ export const ui = {
             cont.appendChild(el);
         });
     },
-    // (Other minor modal renders needed: showQuidProQuo, showVoteInterface, etc. same as before)
     showQuidProQuo(p, demand, party) { this.resetModalState(); document.getElementById('event-title').innerText = `ข้อเสนอแลกเปลี่ยน (Quid Pro Quo)`; document.getElementById('event-desc').innerHTML = `<div class="bg-red-900/30 p-6 rounded-xl border border-red-600 text-left font-sans space-y-4"><div class="flex items-center gap-4"><div class="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xl" style="color:${party.color}">${party.name.charAt(0)}</div><div><div class="font-bold text-lg text-white">ข้อเสนอจาก: ${party.name}</div><div class="text-xs text-zinc-400">พรรคร่วมรัฐบาล</div></div></div><p class="text-zinc-300 text-sm">"ทางเรายินดีจะโหวตสนับสนุนร่าง <b>${p.name}</b> ของท่านอย่างเต็มที่ แต่มีเงื่อนไขว่าท่านต้องอนุมัตินโยบายของเราทันที"</p><div class="bg-black/50 p-4 rounded-lg border border-zinc-700"><div class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">สิ่งที่ต้องการ</div><div class="text-red-400 font-bold text-lg serif">${demand.name}</div><div class="text-xs text-zinc-400 mt-1">งบประมาณที่ใช้: ฿${(demand.cost/1e9).toFixed(1)}B</div></div></div>`; document.getElementById('event-options').innerHTML = `<button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", true)' class="w-full p-4 bg-emerald-700 hover:bg-emerald-600 rounded-xl font-bold text-white font-sans shadow-lg mb-2">ยอมรับข้อเสนอ (จ่ายเงินแลกเสียงโหวต)</button><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", false)' class="w-full p-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-bold text-zinc-400 font-sans border border-zinc-700">ปฏิเสธ (เสี่ยงถูกโหวตสวน)</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
     showVoteInterface(pName) { const p = state.activePolicies.find(x => x.name === pName); gameClock.setSpeed(0); this.resetModalState(); document.getElementById('event-title').innerText = `สภาลงมติ: ${p.name}`; document.getElementById('voting-display').classList.remove('hidden'); document.getElementById('event-options').innerHTML = `<button onclick="engine.runVote('${p.name}')" class="w-full p-4 bg-red-700 hover:bg-red-600 rounded-xl font-bold text-white font-sans">ลงมติ</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
     showAppointModal(mName) { this.resetModalState(); let h = `<div class="space-y-3 max-h-[400px] overflow-y-auto pr-2 scroll-custom text-black">`; const govtParties = state.parties.filter(p => p.status === "Government"); govtParties.forEach(p => { const candidate = state.leaders.find(l => l.party.id === p.id); if(!candidate) return; h += `<div class="bg-white p-4 rounded-xl flex justify-between items-center shadow-md text-left text-black"><div><div class="font-bold text-sm text-black font-sans">${candidate.name}</div><div class="text-[10px] text-red-600 font-bold uppercase">${p.name}</div></div><button onclick="engine.appointMinister('${mName}', ${candidate.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="bg-black text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition font-sans">เลือก</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `แต่งตั้ง ครม. (${mName})`; document.getElementById('event-desc').innerHTML = `<p class="text-xs mb-4 text-zinc-500 italic text-left font-sans">เลือกตัวแทนจากพรรคร่วมรัฐบาล พรรคละ 1 ท่าน</p>${h}`; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-300 rounded-xl font-bold text-black font-sans">ย้อนกลับ</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
     showPartyAdjustModal(type) { this.resetModalState(); const pool = type === 'ideology' ? Data.IDEOLOGY_POOL : Data.GOAL_POOL; let h = `<div class="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-2 scroll-custom text-black">`; pool.forEach(item => { h += `<div class="bg-white p-3 rounded-xl flex justify-between items-center shadow-sm"><span class="font-bold text-xs text-black font-sans">${item}</span><button onclick="engine.adjustStance('${type}', '${item}'); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-sans">เลือก</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `ปรับเปลี่ยน${type === 'ideology' ? 'อุดมการณ์' : 'เป้าหมาย'}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-modal').classList.remove('hidden'); },
-    showStakeholderReview(p, stakeholders, proposer) { this.resetModalState(); document.getElementById('event-title').innerText = `Stakeholder Reaction: ${p.name}`; document.getElementById('stakeholder-reactions').classList.remove('hidden'); let h = ""; stakeholders.forEach(s => { const impact = p.impact[s.name] || 0; const color = impact > 0 ? "text-emerald-400" : (impact < 0 ? "text-red-500" : "text-zinc-500"); h += `<div class="bg-black/30 p-4 rounded-xl border border-zinc-800 flex items-center gap-4 text-left font-sans text-white"><div class="w-10 h-10 bg-zinc-900 rounded flex items-center justify-center ${color}"><i class="fas ${impact > 0 ? 'fa-face-smile' : (impact < 0 ? 'fa-face-angry' : 'fa-face-meh')}"></i></div><div class="flex-1 font-sans"><div class="font-bold text-sm">${s.name}</div><div class="text-[9px] opacity-50">ปัจจุบัน: ${s.approval.toFixed(0)}%</div></div><div class="text-right font-black ${color}">${impact > 0 ? '+' : ''}${impact}</div></div>`; }); document.getElementById('stakeholder-reactions').innerHTML = h; document.getElementById('event-desc').innerText = `ยืนยันจะเสนอร่างกฎหมายนี้ต่อสภาหรือไม่?`; document.getElementById('event-options').innerHTML = `<button onclick='engine.confirmProposal(${JSON.stringify(p)}, "${proposer}")' class="w-full p-4 bg-emerald-700 rounded-xl font-bold font-sans text-white">ยืนยันการเสนอ</button><button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-800 rounded-xl text-zinc-500 font-sans text-white">ยกเลิก</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
+    showStakeholderReview(p, stakeholders, proposer) { 
+        this.resetModalState(); 
+        document.getElementById('event-title').innerText = `Stakeholder Reaction: ${p.name}`; 
+        document.getElementById('stakeholder-reactions').classList.remove('hidden'); 
+        let h = ""; stakeholders.forEach(s => { const impact = p.impact[s.name] || 0; const color = impact > 0 ? "text-emerald-400" : (impact < 0 ? "text-red-500" : "text-zinc-500"); h += `<div class="bg-black/30 p-4 rounded-xl border border-zinc-800 flex items-center gap-4 text-left font-sans text-white"><div class="w-10 h-10 bg-zinc-900 rounded flex items-center justify-center ${color}"><i class="fas ${impact > 0 ? 'fa-face-smile' : (impact < 0 ? 'fa-face-angry' : 'fa-face-meh')}"></i></div><div class="flex-1 font-sans"><div class="font-bold text-sm">${s.name}</div><div class="text-[9px] opacity-50">ปัจจุบัน: ${s.approval.toFixed(0)}%</div></div><div class="text-right font-black ${color}">${impact > 0 ? '+' : ''}${impact}</div></div>`; }); 
+        document.getElementById('stakeholder-reactions').innerHTML = h; 
+        document.getElementById('event-desc').innerText = `ยืนยันจะเสนอร่างกฎหมายนี้ต่อสภาหรือไม่?`; 
+        document.getElementById('event-options').innerHTML = `<button onclick="engine.confirmProposal('${p.name}', '${proposer}')" class="w-full p-4 bg-emerald-700 rounded-xl font-bold font-sans text-white">ยืนยันการเสนอ</button><button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-800 rounded-xl text-zinc-500 font-sans text-white">ยกเลิก</button>`; 
+        document.getElementById('event-modal').classList.remove('hidden'); 
+    },
     renderCabinet() { const cont = document.getElementById('cabinet-list'); if(!cont) return; cont.innerHTML = ""; Object.entries(Data.MINISTRIES).forEach(([n, d]) => { const m = d.currentMinister; const el = document.createElement('div'); el.className = "bg-black/30 p-5 rounded-xl border border-zinc-800 text-center text-white shadow-xl"; el.innerHTML = `<div class="text-[9px] text-zinc-500 uppercase mb-3 font-bold tracking-widest border-b border-zinc-800 pb-2">รมว.${n}</div><div class="${m ? 'font-bold text-sm text-yellow-500' : 'text-zinc-700 italic text-xs'} mb-1 font-sans">${m ? m.name : 'ว่าง'}</div><div class="text-[8px] text-zinc-600 mb-4 font-sans">${m ? m.party.name : 'รอแต่งตั้ง'}</div><button onclick="ui.showAppointModal('${n}')" class="w-full text-[9px] bg-zinc-800 hover:bg-zinc-700 px-2 py-2 rounded font-bold transition font-sans">แต่งตั้ง</button>`; cont.appendChild(el); }); },
     renderMinistryList() { const cont = document.getElementById('ministry-list'); if(!cont) return; cont.innerHTML = ""; Object.entries(Data.MINISTRIES).forEach(([n, d]) => { const btn = document.createElement('div'); btn.className = "p-4 rounded-xl border border-zinc-800 transition flex items-center gap-3 bg-[#1a1c23] cursor-pointer hover:bg-zinc-800 shadow-md text-white font-sans text-xs"; btn.innerHTML = `<i class="fas ${d.icon} text-red-500 w-4 text-center"></i> ${n}`; btn.onclick = () => this.showPolicyBank(n); cont.appendChild(btn); }); },
-    showPolicyBank(mName) { this.resetModalState(); const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName); let h = `<div class="space-y-4">`; if (filtered.length === 0) h += `<div class="text-zinc-500 italic p-4 text-center">ยังไม่มีแผนนโยบาย</div>`; else filtered.forEach(p => { h += `<div class="bg-black/40 p-5 rounded-2xl border border-zinc-700 text-left font-sans text-white"><div class="font-bold text-red-500 text-xl serif">${p.name}</div><button onclick='engine.propose(${JSON.stringify(p)}, "รัฐบาล");' class="w-full mt-4 bg-red-700 py-3 rounded-xl font-bold shadow-lg text-white font-sans">เสนอเข้าสภา</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `ร่างนโยบาย: กระทรวง${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-800 rounded-xl text-zinc-400 font-bold font-sans">ยกเลิก</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
-    renderNews() { const cont = document.getElementById('news-feed'); if(!cont) return; cont.innerHTML = state.news.slice(0, 10).map(n => `<div class="border-b border-zinc-800/50 pb-3 last:border-0 font-sans text-white"><div class="text-[9px] text-zinc-600 mb-1 uppercase font-mono">${n.date}</div><h4 class="font-bold text-zinc-200 text-[10px] font-sans">● ${n.headline}</h4></div>`).join(""); if (state.news.length > 0) { document.getElementById('news-headline').innerText = state.news[0].headline; document.getElementById('news-body').innerText = state.news[0].body; } }
+    
+    // --- FIX: Use string name instead of JSON object ---
+    showPolicyBank(mName) { 
+        this.resetModalState(); 
+        const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName); 
+        let h = `<div class="space-y-4">`; 
+        if (filtered.length === 0) h += `<div class="text-zinc-500 italic p-4 text-center">ยังไม่มีแผนนโยบาย</div>`; 
+        else filtered.forEach(p => { 
+            h += `<div class="bg-black/40 p-5 rounded-2xl border border-zinc-700 text-left font-sans text-white"><div class="font-bold text-red-500 text-xl serif">${p.name}</div><button onclick="engine.propose('${p.name}', 'รัฐบาล')" class="w-full mt-4 bg-red-700 py-3 rounded-xl font-bold shadow-lg text-white font-sans">เสนอเข้าสภา</button></div>`; 
+        }); 
+        h += `</div>`; 
+        document.getElementById('event-title').innerText = `ร่างนโยบาย: กระทรวง${mName}`; 
+        document.getElementById('event-desc').innerHTML = h; 
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-800 rounded-xl text-zinc-400 font-bold font-sans">ยกเลิก</button>`; 
+        document.getElementById('event-modal').classList.remove('hidden'); 
+    },
+    
+    renderNews() { const cont = document.getElementById('news-feed'); if(!cont) return; cont.innerHTML = state.news.slice(0, 10).map(n => `<div class="border-b border-zinc-800/50 pb-3 last:border-0 font-sans text-white"><div class="text-[9px] text-zinc-600 mb-1 uppercase font-mono">${n.date}</div><h4 class="font-bold text-zinc-200 text-[10px] font-sans">● ${n.headline}</h4></div>`).join(""); if (state.news.length > 0) { document.getElementById('news-headline').innerText = state.news[0].headline; document.getElementById('news-body').innerText = state.news[0].body; } },
+    resetModalState() { document.getElementById('voting-display').classList.add('hidden'); document.getElementById('stakeholder-reactions').classList.add('hidden'); document.getElementById('event-options').innerHTML = ""; document.getElementById('event-desc').innerHTML = ""; }
 };
