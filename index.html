@@ -8,12 +8,10 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;700&family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
     
-    <!-- Link to Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="h-screen w-screen flex flex-col font-sans">
 
-    <!-- OVERLAY: SETUP -->
     <div id="setup-overlay" class="fixed inset-0 z-[200] newspaper-bg p-8 flex flex-col overflow-y-auto text-black font-sans">
         <div class="max-w-6xl mx-auto w-full flex flex-col h-full">
             <div class="text-center mb-8">
@@ -35,12 +33,21 @@
                             <label class="block font-bold mb-2 uppercase text-xs tracking-widest opacity-60 text-black">ชื่อ-นามสกุล ของท่าน:</label>
                             <input type="text" id="p-name" class="w-full bg-transparent border-b-2 border-black text-3xl serif focus:outline-none py-2 text-black font-sans" placeholder="ระบุชื่อเพื่อบันทึกประวัติศาสตร์...">
                         </div>
-                        <div class="bg-stone-300 border-2 border-black flex items-center justify-center italic text-stone-500 font-bold text-black">[ Portrait ]</div>
+                        <div class="bg-stone-300 border-2 border-black flex items-center justify-center italic text-stone-500 font-bold text-black min-h-[200px]">[ Portrait ]</div>
                     </div>
                 </div>
-                <div id="step-2" class="hidden fade-in space-y-6"><h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black font-sans">ประสบการณ์และภูมิหลัง</h2><div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-black" id="background-list"></div></div>
-                <div id="step-3" class="hidden fade-in space-y-6 text-black"><h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black text-center font-sans">เลือกพรรคที่ต้องการสังกัด</h2><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto p-2 scroll-custom text-black font-sans" id="party-list-setup"></div></div>
-                <div id="step-4" class="hidden fade-in space-y-6 text-black"><h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black font-sans text-black text-center font-sans">ตำแหน่งเป้าหมาย</h2><div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-black" id="position-list"></div></div>
+                <div id="step-2" class="hidden fade-in space-y-6">
+                    <h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black font-sans">ประสบการณ์และภูมิหลัง</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-black" id="background-list"></div>
+                </div>
+                <div id="step-3" class="hidden fade-in space-y-6 text-black">
+                    <h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black text-center font-sans">เลือกพรรคที่ต้องการสังกัด</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto p-2 scroll-custom text-black font-sans" id="party-list-setup"></div>
+                </div>
+                <div id="step-4" class="hidden fade-in space-y-6 text-black">
+                    <h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black font-sans text-black text-center font-sans">ตำแหน่งเป้าหมาย</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-black" id="position-list"></div>
+                </div>
             </div>
 
             <div class="mt-8 flex justify-between items-center border-t-4 border-black pt-4 text-black">
@@ -51,10 +58,9 @@
         </div>
     </div>
 
-    <!-- HUD -->
     <header class="bg-[#1a1c23] text-white p-3 flex justify-between items-center border-b border-zinc-800 shadow-xl z-[100]">
         <div class="flex items-center gap-6">
-            <h1 class="serif font-bold text-xl text-red-500 tracking-tighter">สมการเมือง <span class="text-[10px] bg-red-900/30 px-1 text-red-400 font-mono">v10.5 ACTIVE OPP.</span></h1>
+            <h1 class="serif font-bold text-xl text-red-500 tracking-tighter">GRAND POLITICAL <span class="text-[10px] bg-red-900/30 px-1 text-red-400 font-mono">SIMULATOR</span></h1>
             <div class="h-8 w-[1px] bg-zinc-700"></div>
             <div id="hud-date" class="font-mono text-sm font-bold text-yellow-500 w-28 text-center">1 ม.ค. 2024</div>
             <div class="flex bg-black/40 rounded p-1 border border-zinc-800">
@@ -87,7 +93,6 @@
     </header>
 
     <div id="main-game" class="hidden flex-1 flex overflow-hidden text-white">
-        <!-- NARROW SIDEBAR -->
         <nav class="w-20 bg-[#12141a] border-r border-zinc-800 flex flex-col items-center py-4 space-y-4 z-10 shadow-2xl">
             <button onclick="ui.tab('dashboard')" class="sidebar-item tab-btn tab-active w-full p-4 flex flex-col items-center gap-1 transition-all relative">
                 <i class="fas fa-newspaper text-lg"></i>
@@ -120,6 +125,12 @@
                 <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs font-sans">กลุ่มอำนาจประชากร</div>
             </button>
             
+            <button onclick="ui.tab('mps')" class="sidebar-item tab-btn w-full p-4 flex flex-col items-center gap-1 text-zinc-400 hover:bg-zinc-800 transition-all relative border-t border-zinc-800 mt-2">
+                <i class="fas fa-users-viewfinder text-lg"></i>
+                <span class="text-[8px] uppercase tracking-tighter opacity-60 font-sans">ทำเนียบ</span>
+                <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs">รายชื่อและจัดการ สส.</div>
+            </button>
+            
             <div class="mt-auto flex flex-col items-center space-y-4 pb-4 font-sans text-white text-center">
                 <div class="flex flex-col items-center gap-1">
                     <i class="fas fa-chart-line text-blue-400 text-sm"></i>
@@ -129,7 +140,6 @@
         </nav>
 
         <main class="flex-1 bg-[#0b0c10] overflow-y-auto p-6 scroll-custom relative font-sans text-white">
-            <!-- Dashboard -->
             <div id="tab-dashboard" class="space-y-6">
                 <div class="bg-white text-black p-8 rounded border-l-[12px] border-red-600 shadow-2xl relative font-sans">
                     <h1 id="news-headline" class="serif text-5xl font-bold mb-4 leading-tight">...</h1>
@@ -147,7 +157,6 @@
                 </div>
             </div>
 
-            <!-- Cabinet Tab -->
             <div id="tab-cabinet" class="hidden space-y-8 font-sans">
                 <div class="flex justify-between items-end font-sans">
                     <h2 class="serif text-4xl font-bold text-white font-sans">การจัดทัพคณะรัฐมนตรี</h2>
@@ -156,7 +165,6 @@
                 <div id="cabinet-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-sans text-white"></div>
             </div>
 
-            <!-- Policy Tab -->
             <div id="tab-policies" class="hidden space-y-8 font-sans">
                 <h2 class="serif text-4xl font-bold font-sans text-white">นโยบายแผ่นดิน</h2>
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 font-sans">
@@ -171,7 +179,6 @@
                 </div>
             </div>
 
-            <!-- Party HQ Tab -->
             <div id="tab-party-hq" class="hidden space-y-8 font-sans">
                 <div class="mb-2">
                     <h2 class="serif text-4xl font-bold font-sans">ศูนย์บัญชาการพรรค (HQ)</h2>
@@ -207,7 +214,6 @@
                 </div>
             </div>
 
-            <!-- Parliament -->
             <div id="tab-parliament" class="hidden space-y-8 font-sans">
                 <div class="bg-[#1a1c23] p-8 rounded-xl border border-zinc-800 shadow-2xl font-sans">
                     <h3 class="serif text-3xl font-bold mb-6 text-white font-sans"><i class="fas fa-landmark text-red-600"></i> โครงสร้างรัฐสภา</h3>
@@ -233,17 +239,30 @@
                         </div>
                     </div>
                 </div>
-                <div id="ai-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 font-sans text-black"></div>
+                <div id="ai-list" class="hidden"></div> 
             </div>
 
-            <!-- Factions -->
+            <div id="tab-mps" class="hidden space-y-6 font-sans">
+                <div class="flex justify-between items-end">
+                    <h2 class="serif text-4xl font-bold text-white font-sans">ทำเนียบสมาชิกสภาผู้แทนราษฎร</h2>
+                    <div class="relative">
+                        <input type="text" id="mp-search-input" placeholder="ค้นหาชื่อ หรือ พรรค..." onkeyup="ui.renderMPList()" class="bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-red-500 w-64 placeholder-zinc-500">
+                        <i class="fas fa-search absolute right-3 top-2.5 text-zinc-500"></i>
+                    </div>
+                </div>
+                
+                <div class="bg-[#1a1c23] rounded-2xl border border-zinc-800 shadow-xl overflow-hidden">
+                    <div id="mp-roster-list" class="max-h-[70vh] overflow-y-auto scroll-custom">
+                        </div>
+                </div>
+            </div>
+
             <div id="tab-factions" class="hidden font-sans text-white">
                 <div id="faction-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 text-white"></div>
             </div>
         </main>
     </div>
 
-    <!-- MODAL -->
     <div id="event-modal" class="fixed inset-0 z-[300] bg-black/95 hidden flex items-center justify-center p-4">
         <div class="bg-[#1a1c23] border border-zinc-700 max-w-2xl w-full p-8 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh] font-sans">
             <h2 id="event-title" class="serif text-4xl font-bold text-red-500 mb-6 border-b border-zinc-800 pb-4 text-center font-sans text-white">...</h2>
@@ -261,7 +280,6 @@
         </div>
     </div>
 
-    <!-- JS Module Link -->
     <script type="module" src="js/main.js"></script>
 </body>
 </html>
