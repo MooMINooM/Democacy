@@ -7,8 +7,9 @@ export const ui = {
         document.querySelectorAll('main > div').forEach(d => d.classList.add('hidden')); 
         const target = document.getElementById(`tab-${t}`); if(target) target.classList.remove('hidden');
         document.querySelectorAll('.tab-btn').forEach(b => { const clickAttr = b.getAttribute('onclick'); b.classList.toggle('tab-active', clickAttr && clickAttr.includes(t)); });
-        // Render graphs if dashboard is opened
-        if (t === 'dashboard') this.renderTrendGraphs();
+        
+        // Render graphs immediately if switching to dashboard
+        if (t === 'dashboard') setTimeout(() => this.renderTrendGraphs(), 100);
     },
     updateHUD() {
         const els = { 'hud-date': state.date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }), 'hud-budget': `฿${(state.world.nationalBudget / 1e12).toFixed(2)}T`, 'hud-approval-text': `${state.world.approval.toFixed(0)}%`, 'hud-personal-display': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'hud-personal-sidebar': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'hud-personal-top': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'stat-cabinet-stability-display': `เสถียรภาพ ครม: ${state.world.cabinetStability}%`, 'stat-cabinet-stability-hud': `${state.world.cabinetStability}%`, 'stat-growth-sidebar': `${state.world.growth > 0 ? '+' : ''}${state.world.growth.toFixed(1)}%` };
@@ -17,74 +18,112 @@ export const ui = {
     },
     updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); },
     
-    // --- IMPROVED: Visual Trends (Sparklines) ---
+    // --- IMPROVED: Rich Visual Graphs ---
     renderTrendGraphs() {
-        const createSparkline = (id, data, color) => {
-            const container = document.getElementById(id);
-            if (!container || data.length < 2) return;
+        // Function to create a detailed SVG Chart
+        const createRichChart = (id, data, color, label, unit) => {
+            const wrapper = document.getElementById(id);
+            if (!wrapper) return;
+            
+            // 1. Calculate Scaling (Zoom in to show movement)
+            const maxVal = Math.max(...data);
+            const minVal = Math.min(...data);
+            const diff = maxVal - minVal;
+            // Add padding so the line isn't stuck to the very top/bottom
+            const padding = diff === 0 ? maxVal * 0.1 : diff * 0.2; 
+            const effectiveMax = maxVal + padding;
+            const effectiveMin = Math.max(0, minVal - padding);
+            const range = effectiveMax - effectiveMin || 1;
 
-            // 1. หาค่า Min/Max และ Range
-            let max = Math.max(...data);
-            let min = Math.min(...data);
-            let range = max - min;
+            // 2. SVG Dimensions
+            const width = wrapper.clientWidth || 300;
+            const height = wrapper.clientHeight || 150;
+            const pointSpacing = width / (Math.max(data.length, 2) - 1);
 
-            // 2. แก้ปัญหา "กราฟเส้นตรง" (กรณีค่าเท่ากันหมด)
-            if (range === 0) {
-                // สร้างระยะหลอกๆ เพื่อให้เส้นอยู่ตรงกลาง ไม่ชิดขอบ
-                max += (max * 0.1) || 10; 
-                min -= (min * 0.1) || 10;
-                range = max - min;
-            } else {
-                // 3. เพิ่ม Padding 20% บน-ล่าง ให้กราฟดูไม่อึดอัด
-                const padding = range * 0.2;
-                max += padding;
-                min -= padding;
-                range = max - min;
+            // 3. Generate Path Points
+            const points = data.map((d, i) => {
+                const x = i * pointSpacing;
+                const normalizedY = (d - effectiveMin) / range;
+                const y = height - (normalizedY * height); // Invert Y for SVG
+                return { x, y, val: d };
+            });
+
+            // Line Path
+            let linePathD = `M${points[0].x},${points[0].y}`;
+            points.forEach((p, i) => { if(i>0) linePathD += ` L${p.x},${p.y}`; });
+
+            // Area Path (for Gradient)
+            const areaPathD = `${linePathD} L${points[points.length-1].x},${height} L${points[0].x},${height} Z`;
+
+            // 4. Generate Grid Lines
+            let grids = "";
+            for(let i=1; i<=3; i++) {
+                const y = (height / 4) * i;
+                grids += `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4"/>`;
             }
 
-            const width = 100; 
-            const height = 40;
+            // 5. Build HTML Overlay
+            const currentValue = data[data.length-1];
+            const displayValue = unit === "T" ? `฿${(currentValue/1e12).toFixed(2)}T` : `${currentValue.toFixed(1)}%`;
             
-            // 4. สร้างจุดพิกัด SVG
-            const points = data.map((d, i) => {
-                const x = (i / (data.length - 1)) * width;
-                // คำนวณ Y โดยกลับด้าน (SVG 0 อยู่บน) และเทียบสัดส่วน
-                const y = height - ((d - min) / range) * height;
-                return `${x},${y}`;
-            }).join(" ");
-
-            // 5. Render SVG (เพิ่ม stroke-width และจุดปลายทาง)
-            container.innerHTML = `
-                <svg width="100%" height="100%" viewBox="0 -5 100 50" preserveAspectRatio="none" style="overflow: visible;">
-                    <defs>
-                        <linearGradient id="grad-${id}" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" style="stop-color:${color};stop-opacity:0.3" />
-                            <stop offset="100%" style="stop-color:${color};stop-opacity:0" />
-                        </linearGradient>
-                    </defs>
-                    <polygon points="0,${height} ${points} 100,${height}" fill="url(#grad-${id})" />
-                    <polyline fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${points}"/>
-                    <circle cx="100" cy="${height - ((data[data.length-1] - min) / range) * height}" r="3" fill="${color}" stroke="#1a1c23" stroke-width="1.5" />
-                </svg>`;
+            const svgContent = `
+                <div class="relative w-full h-full group">
+                    <div class="absolute top-2 left-3 z-10 pointer-events-none">
+                         <div class="text-[10px] text-zinc-400 uppercase tracking-widest font-bold mb-1">${label}</div>
+                         <div class="text-2xl font-bold font-mono" style="color:${color}; text-shadow: 0 0 10px ${color}40;">${displayValue}</div>
+                    </div>
+                    
+                    <svg viewBox="0 0 ${width} ${height}" class="w-full h-full overflow-visible" preserveAspectRatio="none">
+                        <defs>
+                            <linearGradient id="grad-${id}" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" style="stop-color:${color};stop-opacity:0.2" />
+                                <stop offset="100%" style="stop-color:${color};stop-opacity:0" />
+                            </linearGradient>
+                        </defs>
+                        ${grids}
+                        <path d="${areaPathD}" fill="url(#grad-${id})" />
+                        <path d="${linePathD}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" />
+                        ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#1a1c23" stroke="${color}" stroke-width="2" />`).join('')}
+                    </svg>
+                    
+                    <div class="absolute top-0 right-1 text-[9px] text-zinc-600 font-mono">${unit === "T" ? (effectiveMax/1e12).toFixed(1)+'T' : effectiveMax.toFixed(0)}</div>
+                    <div class="absolute bottom-0 right-1 text-[9px] text-zinc-600 font-mono">${unit === "T" ? (effectiveMin/1e12).toFixed(1)+'T' : effectiveMin.toFixed(0)}</div>
+                </div>
+            `;
+            wrapper.innerHTML = svgContent;
         };
 
-        // Inject container structure if missing
+        // Create Container Layout if missing
         const feed = document.getElementById('news-feed');
         if (feed && !document.getElementById('trend-container')) {
-            const div = document.createElement('div');
-            div.id = 'trend-container';
-            div.className = "grid grid-cols-2 gap-4 mb-4 bg-[#1a1c23] p-4 rounded-xl border border-zinc-800 shadow-md";
-            div.innerHTML = `
-                <div><div class="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-2">Approval Trend</div><div id="trend-approval" class="h-12 w-full"></div></div>
-                <div><div class="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-2">Budget Trend</div><div id="trend-budget" class="h-12 w-full"></div></div>
-            `;
-            // Insert before news feed
-            feed.parentElement.insertBefore(div, feed.parentElement.firstChild.nextSibling.nextSibling); 
+             // Create a wrapper div for the charts
+             const div = document.createElement('div');
+             div.id = 'trend-container';
+             div.className = "grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"; 
+             div.innerHTML = `
+                <div class="bg-[#1a1c23] rounded-2xl border border-zinc-800 shadow-lg h-48 overflow-hidden relative p-0" id="wrapper-approval">
+                    <div id="trend-approval" class="w-full h-full"></div>
+                </div>
+                <div class="bg-[#1a1c23] rounded-2xl border border-zinc-800 shadow-lg h-48 overflow-hidden relative p-0" id="wrapper-budget">
+                    <div id="trend-budget" class="w-full h-full"></div>
+                </div>
+             `;
+             // Insert BEFORE the parent of news-feed to place it at top of dashboard logic
+             // Assuming structure: Dashboard > [News Column, Faction Column]
+             // We want it to span full width, so we insert it before the grid container
+             const contentGrid = feed.closest('.grid'); 
+             if(contentGrid) {
+                 contentGrid.parentNode.insertBefore(div, contentGrid);
+             } else {
+                 // Fallback
+                 feed.parentElement.insertAdjacentElement('beforebegin', div);
+             }
         }
         
+        // Draw Charts
         if (state.history && state.history.approval.length > 0) {
-            createSparkline('trend-approval', state.history.approval, '#eab308'); // Yellow
-            createSparkline('trend-budget', state.history.budget, '#60a5fa');   // Blue
+            createRichChart('trend-approval', state.history.approval, '#eab308', 'Approval Rating', '%');
+            createRichChart('trend-budget', state.history.budget, '#60a5fa', 'National Budget', 'T');
         }
     },
 
@@ -95,21 +134,27 @@ export const ui = {
         if(idCont) idCont.innerHTML = p.ideologies.map(i => `<span class="badge-ideology text-white">${i}</span>`).join("");
         if(glCont) glCont.innerHTML = p.goals.map(g => `<span class="badge-goal font-sans">${g}</span>`).join("");
         
-        // Add Transparency Display in HQ
+        // Transparency Display
         if (!document.getElementById('transparency-display')) {
-             const cont = document.getElementById('my-party-goals').parentElement.parentElement;
-             const div = document.createElement('div');
-             div.id = 'transparency-display';
-             div.className = "mt-4 border-t border-zinc-700 pt-4";
-             cont.appendChild(div);
+             const parent = document.getElementById('my-party-goals').closest('.bg-\\[\\#1a1c23\\]');
+             if(parent) {
+                 const div = document.createElement('div');
+                 div.id = 'transparency-display';
+                 div.className = "mt-6 border-t border-zinc-700 pt-4";
+                 parent.appendChild(div);
+             }
         }
-        const tVal = state.world.transparency;
-        const tColor = tVal > 70 ? 'text-emerald-400' : (tVal > 40 ? 'text-yellow-500' : 'text-red-500 animate-pulse');
-        document.getElementById('transparency-display').innerHTML = `
-            <div class="flex justify-between items-center"><span class="text-xs font-bold text-zinc-400">ดัชนีความโปร่งใส (Transparency)</span><span class="font-mono font-bold ${tColor}">${tVal}%</span></div>
-            <div class="w-full bg-black h-1.5 rounded-full mt-2 overflow-hidden"><div class="h-full bg-white transition-all" style="width:${tVal}%"></div></div>
-            <div class="text-[8px] text-zinc-600 mt-1 italic">ระวัง: หากต่ำกว่า 40% มีความเสี่ยงถูกรัฐประหาร</div>
-        `;
+        
+        const tDisp = document.getElementById('transparency-display');
+        if(tDisp) {
+            const tVal = state.world.transparency;
+            const tColor = tVal > 70 ? 'text-emerald-400' : (tVal > 40 ? 'text-yellow-500' : 'text-red-500 animate-pulse');
+            tDisp.innerHTML = `
+                <div class="flex justify-between items-center"><span class="text-xs font-bold text-zinc-400 uppercase tracking-widest">ดัชนีความโปร่งใส (Transparency)</span><span class="font-mono font-bold ${tColor}">${tVal}%</span></div>
+                <div class="w-full bg-black h-2 rounded-full mt-2 overflow-hidden border border-zinc-700"><div class="h-full bg-white transition-all duration-500" style="width:${tVal}%"></div></div>
+                <div class="text-[9px] text-zinc-600 mt-2 italic text-right">ความเสี่ยงรัฐประหาร: ${tVal < 40 ? '<span class="text-red-500 font-bold">สูงมาก</span>' : '<span class="text-emerald-600">ต่ำ</span>'}</div>
+            `;
+        }
     },
 
     showPartyAdjustModal(type) {
@@ -298,13 +343,12 @@ export const ui = {
             </div>`).join("");
     },
     
-    // --- UPGRADED: Parliament Heatmap ---
+    // --- Heatmap Parliament Render ---
     renderParliament() {
         const chart = document.getElementById('parliament-chart'); const table = document.getElementById('party-stat-table'); if(!chart || !table) return;
         chart.innerHTML = ""; table.innerHTML = "";
         let gT = 0, oT = 0, nT = 0;
         
-        // Render Stats Table
         state.parties.sort((a,b) => b.seats - a.seats).forEach(p => {
             const tag = p.status === "Government" ? "govt-tag" : (p.status === "Opposition" ? "opp-tag" : "neu-tag");
             const label = p.status === "Government" ? "รัฐบาล" : (p.status === "Opposition" ? "ฝ่ายค้าน" : "วางเฉย");
@@ -321,18 +365,17 @@ export const ui = {
             <div class="flex justify-between text-xs mt-1 text-white font-sans"><span>ฝ่ายค้าน:</span> <span class="text-red-400 font-bold font-sans">${oT}</span></div>
             <div class="flex justify-between text-xs border-t border-zinc-800 pt-2 mt-2 text-white text-white"><span>วางเฉย:</span> <span class="text-zinc-500 font-sans">${nT}</span></div>`;
         
-        // Heatmap Logic for Dots
+        // Heatmap Dots
         state.leaders.forEach(l => { 
             const dot = document.createElement('div'); 
             dot.className = "voting-dot shadow-sm"; 
             
             if (state.lastVoteResults) {
-                // If viewing voting results
                 const result = state.lastVoteResults.find(r => r.id === l.id);
                 if (result) {
-                    if (result.vote === 'yes') dot.style.backgroundColor = '#10b981'; // Green
-                    else if (result.vote === 'no') dot.style.backgroundColor = '#ef4444'; // Red
-                    else dot.style.backgroundColor = '#52525b'; // Grey
+                    if (result.vote === 'yes') dot.style.backgroundColor = '#10b981'; 
+                    else if (result.vote === 'no') dot.style.backgroundColor = '#ef4444';
+                    else dot.style.backgroundColor = '#52525b';
                     
                     if (result.isRebel) {
                          dot.classList.add('animate-pulse');
@@ -340,7 +383,6 @@ export const ui = {
                     }
                 }
             } else {
-                // Normal view
                 dot.style.backgroundColor = l.party.color; 
             }
             chart.appendChild(dot); 
