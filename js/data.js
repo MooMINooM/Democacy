@@ -1,4 +1,4 @@
-// --- EXISTING FACTION DATA (Keep as is) ---
+// --- ฐานข้อมูลกลุ่มอำนาจ (Factions) ---
 export const FACTION_DATA = [
     { name: "กองทัพ", weight: 80, wealth: 70, basePop: 300000, icon: "fa-shield-halved" },
     { name: "หัวก้าวหน้า", weight: 60, wealth: 30, basePop: 5000000, icon: "fa-bolt" },
@@ -20,53 +20,82 @@ export const FACTION_DATA = [
 ];
 export const FACTION_NAMES = FACTION_DATA.map(f => f.name);
 
+// --- MAPPING ICON สำหรับ String (Ideology & Goal) ---
+export const TRAIT_ICONS = {
+    // แนวคิด (Ideology)
+    "เสรีนิยม": "fa-dove",
+    "ชาตินิยม": "fa-flag",
+    "อำนาจนิยม": "fa-gavel",
+    "ประชาธิปไตย": "fa-check-to-slot",
+    "สังคมนิยม": "fa-users",
+    "ฟาสซิสต์": "fa-hand-fist",
+    "คอมมิวนิสต์": "fa-hammer",
+    "ศาสนานิยม": "fa-hands-praying",
+    "ฆราวาสนิยม": "fa-ban",
+    "อนุรักษ์นิยม": "fa-landmark",
+    "โลกาภิวัตน์": "fa-earth-americas",
+    "การแยกตัว": "fa-scissors",
+    "หัวก้าวหน้า": "fa-rocket",
+    "ประชานิยม": "fa-heart",
+    "สิทธิมนุษยชน": "fa-hand-holding-heart",
+    
+    // เป้าหมาย (Goal)
+    "การศึกษา": "fa-graduation-cap",
+    "เศรษฐกิจ": "fa-chart-line",
+    "การต่างประเทศ": "fa-handshake",
+    "สิ่งแวดล้อม": "fa-leaf",
+    "การเกษตร": "fa-wheat-awn",
+    "การทหาร": "fa-jet-fighter",
+    "เทคโนโลยี": "fa-microchip",
+    "สาธารณสุข": "fa-hospital",
+    "ความยุติธรรม": "fa-scale-balanced",
+    "การอนุรักษ์ทรัพยากร": "fa-tree",
+    "อุตสาหกรรมและการส่งออก": "fa-industry",
+    "การท่องเที่ยว": "fa-plane",
+    "คุณภาพชีวิต": "fa-smile",
+    "สวัสดิการแรงงาน": "fa-hard-hat",
+    "การสะสมทุน": "fa-sack-dollar",
+    "ความมั่นคงทางอาหาร": "fa-bowl-rice",
+    "สิทธิพลเมือง": "fa-user-shield"
+};
+
 // --- 1. ด้านแนวคิด (IDEOLOGY) ---
-export const IDEOLOGY_POOL = [
-    "เสรีนิยม", "ชาตินิยม", "อำนาจนิยม", "ประชาธิปไตย", "สังคมนิยม", 
-    "ฟาสซิสต์", "คอมมิวนิสต์", "ศาสนานิยม", "ฆราวาสนิยม", "อนุรักษ์นิยม", 
-    "โลกาภิวัตน์", "การแยกตัว", "หัวก้าวหน้า", "ประชานิยม", "สิทธิมนุษยชน"
-];
+export const IDEOLOGY_POOL = Object.keys(TRAIT_ICONS).slice(0, 15);
 
 // --- 2. ด้านเป้าหมาย (GOAL) ---
-export const GOAL_POOL = [
-    "การศึกษา", "เศรษฐกิจ", "การต่างประเทศ", "สิ่งแวดล้อม", "การเกษตร", 
-    "การทหาร", "เทคโนโลยี", "สาธารณสุข", "ความยุติธรรม", "การอนุรักษ์ทรัพยากร", 
-    "อุตสาหกรรมและการส่งออก", "การท่องเที่ยว", "คุณภาพชีวิต", "สวัสดิการแรงงาน", 
-    "การสะสมทุน", "ความมั่นคงทางอาหาร", "สิทธิพลเมือง"
-];
+export const GOAL_POOL = Object.keys(TRAIT_ICONS).slice(15);
 
 // --- 3. ด้านความสามารถ (ABILITY) ---
-// costMod: ตัวคูณราคาค่าตัว, influence: ผลต่อคะแนนเสียง
 export const ABILITY_POOL = [
-    { name: "การสื่อสารภาษาต่างประเทศ", costMod: 1.2, desc: "เจรจาต่างชาติได้ดี" },
-    { name: "การรับมือสื่อสาธารณะ", costMod: 1.5, desc: "แก้ข่าวเก่ง ลดความเสียหาย" },
-    { name: "การพูดชักจูง", costMod: 1.4, desc: "เพิ่มโอกาสโหวตชนะ" },
-    { name: "การระดมพล", costMod: 1.3, desc: "เรียกม็อบได้" },
-    { name: "การเงิน", costMod: 1.5, desc: "หาเงินทุนเข้าพรรคเก่ง" },
-    { name: "บารมี", costMod: 2.0, desc: "อิทธิพลสูง คุมเสียงได้" },
-    { name: "เครือข่ายความสัมพันธ์", costMod: 1.8, desc: "รู้ข่าวงูเห่าเร็ว" },
-    { name: "การคิดวิเคราะห์", costMod: 1.2, desc: "วางแผนแม่นยำ" },
-    { name: "ความเชี่ยวชาญเฉพาะทาง", costMod: 1.3, desc: "ร่างกฎหมายผ่านง่าย" },
-    { name: "การคอรัปชั่น", costMod: 0.5, desc: "ซื้อตัวง่ายมาก" },
-    { name: "ความยืดหยุ่นทางอุดมการณ์", costMod: 0.8, desc: "ย้ายพรรคง่าย" },
-    { name: "ความเด็ดขาด", costMod: 1.5, desc: "ไม่ค่อยโหวตสวน" },
-    { name: "การบริหารจัดการ", costMod: 1.4, desc: "เพิ่มประสิทธิภาพกระทรวง" },
-    { name: "การต่างประเทศ", costMod: 1.3, desc: "ภาพลักษณ์ดี" }
+    { name: "การสื่อสารภาษาต่างประเทศ", costMod: 1.2, desc: "เจรจาต่างชาติได้ดี", icon: "fa-language" },
+    { name: "การรับมือสื่อสาธารณะ", costMod: 1.5, desc: "แก้ข่าวเก่ง ลดความเสียหาย", icon: "fa-microphone" },
+    { name: "การพูดชักจูง", costMod: 1.4, desc: "เพิ่มโอกาสโหวตชนะ", icon: "fa-bullhorn" },
+    { name: "การระดมพล", costMod: 1.3, desc: "เรียกม็อบได้", icon: "fa-users-line" },
+    { name: "การเงิน", costMod: 1.5, desc: "หาเงินทุนเข้าพรรคเก่ง", icon: "fa-money-bill-wave" },
+    { name: "บารมี", costMod: 2.0, desc: "อิทธิพลสูง คุมเสียงได้", icon: "fa-sun" },
+    { name: "เครือข่ายความสัมพันธ์", costMod: 1.8, desc: "รู้ข่าวงูเห่าเร็ว", icon: "fa-diagram-project" },
+    { name: "การคิดวิเคราะห์", costMod: 1.2, desc: "วางแผนแม่นยำ", icon: "fa-magnifying-glass-chart" },
+    { name: "ความเชี่ยวชาญเฉพาะทาง", costMod: 1.3, desc: "ร่างกฎหมายผ่านง่าย", icon: "fa-puzzle-piece" },
+    { name: "การคอรัปชั่น", costMod: 0.5, desc: "ซื้อตัวง่ายมาก", icon: "fa-hand-holding-dollar" },
+    { name: "ความยืดหยุ่นทางอุดมการณ์", costMod: 0.8, desc: "ย้ายพรรคง่าย", icon: "fa-shuffle" },
+    { name: "ความเด็ดขาด", costMod: 1.5, desc: "ไม่ค่อยโหวตสวน", icon: "fa-gavel" },
+    { name: "การบริหารจัดการ", costMod: 1.4, desc: "เพิ่มประสิทธิภาพกระทรวง", icon: "fa-sitemap" },
+    { name: "การต่างประเทศ", costMod: 1.3, desc: "ภาพลักษณ์ดี", icon: "fa-passport" }
 ];
 
 // --- 4. ด้านสถานะทางสังคม/ที่มาของรายได้ (SOCIO-ECONOMIC) ---
-// baseWealth: ฐานะการเงิน (M), costMod: ความยากในการซื้อ (คนรวยซื้อยากกว่า)
 export const SOCIO_POOL = [
-    { name: "เกษตรกร", baseWealth: 5, costMod: 0.8 },
-    { name: "มนุษย์เงินเดือน(เอกชน)", baseWealth: 10, costMod: 1.0 },
-    { name: "เจ้าของธุรกิจขนาดใหญ่", baseWealth: 500, costMod: 3.0 },
-    { name: "แรงงาน", baseWealth: 3, costMod: 0.7 },
-    { name: "เจ้าของธุรกิจขนาดเล็ก", baseWealth: 20, costMod: 1.2 },
-    { name: "อดีตข้าราชการ", baseWealth: 15, costMod: 1.1 },
-    { name: "อาชีพอิสระ", baseWealth: 8, costMod: 0.9 },
-    { name: "นักวิชาการ", baseWealth: 12, costMod: 1.5 }
+    { name: "เกษตรกร", baseWealth: 5, costMod: 0.8, icon: "fa-tractor" },
+    { name: "มนุษย์เงินเดือน(เอกชน)", baseWealth: 10, costMod: 1.0, icon: "fa-user-tie" },
+    { name: "เจ้าของธุรกิจขนาดใหญ่", baseWealth: 500, costMod: 3.0, icon: "fa-building" },
+    { name: "แรงงาน", baseWealth: 3, costMod: 0.7, icon: "fa-wrench" },
+    { name: "เจ้าของธุรกิจขนาดเล็ก", baseWealth: 20, costMod: 1.2, icon: "fa-store" },
+    { name: "อดีตข้าราชการ", baseWealth: 15, costMod: 1.1, icon: "fa-stamp" },
+    { name: "อาชีพอิสระ", baseWealth: 8, costMod: 0.9, icon: "fa-laptop" },
+    { name: "นักวิชาการ", baseWealth: 12, costMod: 1.5, icon: "fa-book-open" }
 ];
 
+// (ส่วนที่เหลือของไฟล์ data.js คงเดิมตามที่คุณมี เช่น IDEOLOGY_CONFLICTS, MINISTRIES ฯลฯ)
 export const IDEOLOGY_CONFLICTS = {
     "เสรีนิยม": ["อำนาจนิยม", "ฟาสซิสต์"],
     "ประชาธิปไตย": ["อำนาจนิยม", "ฟาสซิสต์", "คอมมิวนิสต์"],
@@ -84,7 +113,6 @@ export let ALL_MP_NAMES = [];
 THAI_NAMES.forEach(f => THAI_SURNAMES.forEach(l => ALL_MP_NAMES.push(`สส.${f} ${l}`)));
 ALL_MP_NAMES.sort(() => Math.random() - 0.5);
 
-// Player Backgrounds (Keep for compatibility)
 export const BACKGROUNDS = [
     { id: "politician", name: "นักการเมืองอาชีพ", desc: "เข้าใจกลไกพรรคการเมือง", traits: ["เครือข่าย +20", "เจรจา +15"] },
     { id: "academic", name: "นักวิชาการ", desc: "เน้นข้อมูลและหลักการนโยบาย", traits: ["นโยบาย +25", "อภิปราย +15"] },
@@ -112,8 +140,8 @@ export const MINISTRIES = {
 };
 
 export const POLICY_TEMPLATES = [
-    { ministry: "เกษตรและสหกรณ์", name: "โครงการประกันราคาพืชผล", cost: 8e10, delibTime: 30, cooldown: 90, ideology: "ประชานิยม", goal: "เกษตร", target: "เกษตรกร", impact: { "เกษตรกร": 20, "นายทุน": -10 } },
-    { ministry: "เกษตรและสหกรณ์", name: "ธนาคารน้ำใต้ดินทั่วไทย", cost: 1.5e10, delibTime: 40, cooldown: 100, ideology: "เทคโนแครต", goal: "ทรัพยากร", target: "เกษตรกร", impact: { "เกษตรกร": 15, "สิ่งแวดล้อม": 10 } },
+    { ministry: "เกษตรและสหกรณ์", name: "โครงการประกันราคาพืชผล", cost: 8e10, delibTime: 30, cooldown: 90, ideology: "ประชานิยม", goal: "การเกษตร", target: "เกษตรกร", impact: { "เกษตรกร": 20, "นายทุน": -10 } },
+    { ministry: "เกษตรและสหกรณ์", name: "ธนาคารน้ำใต้ดินทั่วไทย", cost: 1.5e10, delibTime: 40, cooldown: 100, ideology: "เทคโนแครต", goal: "การอนุรักษ์ทรัพยากร", target: "เกษตรกร", impact: { "เกษตรกร": 15, "สิ่งแวดล้อม": 10 } },
     { ministry: "การคลัง", name: "ภาษีเงินได้อัตราก้าวหน้า", cost: 0, delibTime: 60, cooldown: 180, ideology: "สังคมนิยม", goal: "คุณภาพชีวิต", target: "หัวก้าวหน้า", impact: { "นายทุน": -30, "หัวก้าวหน้า": 20 } },
     { ministry: "กลาโหม", name: "จัดซื้อเครื่องบินขับไล่", cost: 2.5e10, delibTime: 40, cooldown: 150, ideology: "ชาตินิยม", goal: "การทหาร", target: "กองทัพ", impact: { "กองทัพ": 25, "เด็กรุ่นใหม่": -25 } },
     { ministry: "คมนาคม", name: "รถไฟฟ้าความเร็วสูง", cost: 1.2e11, delibTime: 90, cooldown: 200, ideology: "โลกาภิวัตน์", goal: "เศรษฐกิจ", target: "ชนชั้นกลาง", impact: { "ชนชั้นกลาง": 20, "สิ่งแวดล้อม": -5 } }
