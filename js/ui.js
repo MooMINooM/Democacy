@@ -17,7 +17,7 @@ export const ui = {
     },
     updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); if(!document.getElementById('tab-mps').classList.contains('hidden')) this.renderMPList(); },
     
-    // --- Helper: สร้างไอคอนพร้อม Tooltip ---
+    // --- Helper: สร้างไอคอนพร้อม Tooltip (เพิ่มใหม่) ---
     createIcon(iconClass, colorClass, title, subtitle = "") {
         return `
             <div class="group relative inline-flex items-center justify-center w-8 h-8 bg-zinc-800 rounded-full border border-zinc-700 hover:bg-zinc-700 cursor-help transition">
@@ -31,7 +31,7 @@ export const ui = {
         `;
     },
 
-    // --- Render หน้าทำเนียบ สส. ---
+    // --- Render หน้าทำเนียบ สส. (ตารางหลัก) ---
     renderMPList() {
         const cont = document.getElementById('mp-roster-list'); if(!cont) return;
         const filterVal = document.getElementById('mp-search-input')?.value.toLowerCase() || "";
@@ -53,8 +53,8 @@ export const ui = {
         filtered.slice(0, 100).forEach(l => { 
             const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
             
-            // เช็คว่ามีข้อมูล Trait หรือไม่ (กัน Error กรณีข้อมูลเก่า)
-            const trait = l.trait || { ideology: "ไม่ระบุ", goal: "ไม่ระบุ", ability: { icon: "fa-question", name: "-", desc: "" }, socio: { icon: "fa-user", name: "-", baseWealth: 0 } };
+            // ป้องกัน Error กรณีข้อมูลเก่าไม่มี trait
+            const trait = l.trait || { ideology: "-", goal: "-", ability: { icon: "fa-question", name: "-", desc: "" }, socio: { icon: "fa-user", name: "-", baseWealth: 0 } };
             
             const ideologyIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', trait.ideology);
             const goalIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', trait.goal);
@@ -95,9 +95,10 @@ export const ui = {
         cont.innerHTML = html;
     },
 
-    // --- หน้าต่างเลือก ครม. แบบตาราง ---
+    // --- UPGRADED: หน้าต่างเลือก ครม. (แก้ใหม่เป็นตาราง) ---
     showAppointModal(mName) {
         this.resetModalState();
+        
         let html = `<div class="space-y-2 max-h-[500px] overflow-y-auto pr-2 scroll-custom text-black">
             <table class="w-full text-left font-sans text-xs text-white border-collapse">
                 <thead class="bg-black/50 text-zinc-400 uppercase tracking-wider sticky top-0 z-10">
@@ -111,6 +112,7 @@ export const ui = {
                 </thead>
                 <tbody class="divide-y divide-zinc-800">`;
 
+        // กรองเฉพาะ สส. พรรคร่วมรัฐบาล
         const govtParties = state.parties.filter(p => p.status === "Government");
         let candidateCount = 0;
 
@@ -119,17 +121,39 @@ export const ui = {
             candidates.forEach(l => {
                 candidateCount++;
                 const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
+                
+                // กัน Error ข้อมูลเก่า
                 const trait = l.trait || { ideology: "-", goal: "-", ability: { icon: "fa-question", name: "-" }, socio: { name: "ไม่ระบุ" } };
+
+                // สร้างไอคอนสำหรับหน้าเลือก ครม.
                 const ideologyIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', trait.ideology);
                 const abilityIcon = this.createIcon(trait.ability?.icon || 'fa-star', 'text-orange-400', trait.ability?.name || '-', trait.ability?.desc || '');
                 const goalIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', trait.goal);
 
                 html += `<tr class="hover:bg-zinc-800/50 transition">
-                    <td class="p-3 font-bold">${l.name}<div class="text-[9px] font-normal text-zinc-500">${trait.socio?.name || 'ไม่ระบุอาชีพ'}</div></td>
-                    <td class="p-3"><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${l.party.color}"></div><span class="text-[10px]">${l.party.name}</span></div></td>
-                    <td class="p-3 text-center"><div class="flex justify-center gap-1">${abilityIcon}${ideologyIcon}${goalIcon}</div></td>
+                    <td class="p-3 font-bold">
+                        ${l.name}
+                        <div class="text-[9px] font-normal text-zinc-500">${trait.socio?.name || 'ไม่ระบุอาชีพ'}</div>
+                    </td>
+                    <td class="p-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full" style="background:${l.party.color}"></div>
+                            <span class="text-[10px]">${l.party.name}</span>
+                        </div>
+                    </td>
+                    <td class="p-3 text-center">
+                        <div class="flex justify-center gap-1">
+                            ${abilityIcon}
+                            ${ideologyIcon}
+                            ${goalIcon}
+                        </div>
+                    </td>
                     <td class="p-3 text-center font-mono font-bold ${loyaltyColor}">${l.loyalty.toFixed(0)}%</td>
-                    <td class="p-3 text-center"><button onclick="engine.appointMinister('${mName}', ${l.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="bg-zinc-100 hover:bg-emerald-500 hover:text-white text-black px-3 py-1 rounded text-[10px] font-bold transition shadow-sm">แต่งตั้ง</button></td>
+                    <td class="p-3 text-center">
+                        <button onclick="engine.appointMinister('${mName}', ${l.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="bg-zinc-100 hover:bg-emerald-500 hover:text-white text-black px-3 py-1 rounded text-[10px] font-bold transition shadow-sm">
+                            แต่งตั้ง
+                        </button>
+                    </td>
                 </tr>`;
             });
         });
@@ -146,9 +170,15 @@ export const ui = {
     showMPActionModal(id) {
         this.resetModalState();
         const l = state.leaders.find(x => x.id === id); if(!l) return;
+        
         document.getElementById('event-title').innerText = `แฟ้มประวัติ: ${l.name}`;
+        
         const trait = l.trait || { ideology: "-", goal: "-", ability: { icon: "fa-question", name: "-", desc: "-", costMod: 1 }, socio: { icon: "fa-user", name: "-", costMod: 1, baseWealth: 0 } };
-        const lobbyCost = 2000000 * trait.socio.costMod; const cobraCost = 10000000 * trait.ability.costMod * trait.socio.costMod; const switchCost = 50000000 * trait.ability.costMod * trait.socio.costMod; const isMyParty = l.party.id === state.player.party.id;
+
+        const lobbyCost = 2000000 * trait.socio.costMod;
+        const cobraCost = 10000000 * trait.ability.costMod * trait.socio.costMod;
+        const switchCost = 50000000 * trait.ability.costMod * trait.socio.costMod;
+        const isMyParty = l.party.id === state.player.party.id;
 
         document.getElementById('event-desc').innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left font-sans mb-6 text-white">
@@ -157,21 +187,62 @@ export const ui = {
                     <div><span class="text-zinc-400 text-xs">พรรคสังกัด:</span> <span style="color:${l.party.color}" class="font-bold ml-2">${l.party.name}</span></div>
                     <div><span class="text-zinc-400 text-xs">ฐานเสียง:</span> <span class="ml-2">${l.status}</span></div>
                     <div><span class="text-zinc-400 text-xs">ทรัพย์สิน:</span> <span class="text-emerald-400 font-bold ml-2">฿${(l.cash/1e6).toFixed(1)}M</span></div>
-                    <div class="bg-zinc-800/50 p-2 rounded mt-2 flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${trait.socio.icon} text-emerald-400"></i></div><div><div class="text-xs text-zinc-300">อาชีพ: <b>${trait.socio.name}</b></div><div class="text-[10px] text-zinc-500">Wealth Factor: x${trait.socio.costMod}</div></div></div>
+                    <div class="bg-zinc-800/50 p-2 rounded mt-2 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${trait.socio.icon} text-emerald-400"></i></div>
+                        <div>
+                            <div class="text-xs text-zinc-300">อาชีพ: <b>${trait.socio.name}</b></div>
+                            <div class="text-[10px] text-zinc-500">Wealth Factor: x${trait.socio.costMod}</div>
+                        </div>
+                    </div>
                 </div>
+
                 <div class="bg-black/40 p-4 rounded-xl border border-zinc-700 space-y-2">
                     <div class="text-[10px] text-zinc-500 uppercase font-bold border-b border-zinc-800 pb-1 mb-2">คุณลักษณะพิเศษ</div>
-                    <div class="flex items-center gap-2 text-xs"><i class="fas ${Data.TRAIT_ICONS?.[trait.ideology] || 'fa-circle'} text-blue-400 w-4 text-center"></i><span class="text-zinc-400">แนวคิด:</span> <span class="text-white">${trait.ideology}</span></div>
-                    <div class="flex items-center gap-2 text-xs"><i class="fas ${Data.TRAIT_ICONS?.[trait.goal] || 'fa-circle'} text-purple-400 w-4 text-center"></i><span class="text-zinc-400">เป้าหมาย:</span> <span class="text-white">${trait.goal}</span></div>
-                    <div class="bg-zinc-800/50 p-2 rounded mt-2 flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${trait.ability.icon} text-orange-400"></i></div><div><div class="text-xs text-orange-300">ความสามารถ: <b>${trait.ability.name}</b></div><div class="text-[10px] text-zinc-500">${trait.ability.desc}</div></div></div>
+                    <div class="flex items-center gap-2 text-xs">
+                        <i class="fas ${Data.TRAIT_ICONS?.[trait.ideology] || 'fa-circle'} text-blue-400 w-4 text-center"></i>
+                        <span class="text-zinc-400">แนวคิด:</span> <span class="text-white">${trait.ideology}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs">
+                        <i class="fas ${Data.TRAIT_ICONS?.[trait.goal] || 'fa-circle'} text-purple-400 w-4 text-center"></i>
+                        <span class="text-zinc-400">เป้าหมาย:</span> <span class="text-white">${trait.goal}</span>
+                    </div>
+                    <div class="bg-zinc-800/50 p-2 rounded mt-2 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${trait.ability.icon} text-orange-400"></i></div>
+                        <div>
+                            <div class="text-xs text-orange-300">ความสามารถ: <b>${trait.ability.name}</b></div>
+                            <div class="text-[10px] text-zinc-500">${trait.ability.desc}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="bg-zinc-900 p-4 rounded-xl border border-zinc-800 mb-4 flex justify-between items-center shadow-inner"><div class="text-xs text-zinc-400 uppercase tracking-widest">สถานะความภักดี (Loyalty)</div><div class="text-2xl font-black font-mono ${l.loyalty > 50 ? 'text-emerald-500' : 'text-red-500'}">${l.loyalty.toFixed(0)}%</div></div>
+            <div class="bg-zinc-900 p-4 rounded-xl border border-zinc-800 mb-4 flex justify-between items-center shadow-inner">
+                <div class="text-xs text-zinc-400 uppercase tracking-widest">สถานะความภักดี (Loyalty)</div>
+                <div class="text-2xl font-black font-mono ${l.loyalty > 50 ? 'text-emerald-500' : 'text-red-500'}">${l.loyalty.toFixed(0)}%</div>
+            </div>
             <div class="grid grid-cols-1 gap-3">
-                <button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-4 rounded-xl border border-zinc-700 transition group items-center"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded bg-emerald-900/50 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-black transition"><i class="fas fa-handshake"></i></div><span class="font-bold text-sm text-white group-hover:text-emerald-300">กระชับความสัมพันธ์ (Lobby)</span></div><span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span></button>
-                <button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'} ><div class="flex items-center gap-3"><div class="w-8 h-8 rounded bg-red-900/50 flex items-center justify-center group-hover:bg-red-500 group-hover:text-black transition"><i class="fas fa-snake"></i></div><span class="font-bold text-sm text-white group-hover:text-red-300">ซื้อตัวงูเห่า (Secret Deal)</span></div><span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span></button>
-                <button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'} ><div class="flex items-center gap-3"><div class="w-8 h-8 rounded bg-purple-900/50 flex items-center justify-center group-hover:bg-purple-500 group-hover:text-black transition"><i class="fas fa-right-left"></i></div><span class="font-bold text-sm text-white group-hover:text-purple-300">ดูดเข้าพรรค (Force Switch)</span></div><span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span></button>
-            </div>`;
+                <button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-4 rounded-xl border border-zinc-700 transition group items-center">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-emerald-900/50 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-black transition"><i class="fas fa-handshake"></i></div>
+                        <span class="font-bold text-sm text-white group-hover:text-emerald-300">กระชับความสัมพันธ์ (Lobby)</span>
+                    </div>
+                    <span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span>
+                </button>
+                <button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'} >
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-red-900/50 flex items-center justify-center group-hover:bg-red-500 group-hover:text-black transition"><i class="fas fa-snake"></i></div>
+                        <span class="font-bold text-sm text-white group-hover:text-red-300">ซื้อตัวงูเห่า (Secret Deal)</span>
+                    </div>
+                    <span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span>
+                </button>
+                <button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'} >
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-purple-900/50 flex items-center justify-center group-hover:bg-purple-500 group-hover:text-black transition"><i class="fas fa-right-left"></i></div>
+                        <span class="font-bold text-sm text-white group-hover:text-purple-300">ดูดเข้าพรรค (Force Switch)</span>
+                    </div>
+                    <span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span>
+                </button>
+            </div>
+        `;
         document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden');" class="w-full p-3 bg-zinc-900 rounded-xl text-zinc-400 hover:bg-zinc-800 font-bold border border-zinc-800">ปิดหน้าต่าง</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
     },
