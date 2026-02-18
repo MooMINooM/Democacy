@@ -70,7 +70,6 @@ export const engine = {
         });
         pArr[0].seats += rSeats;
 
-        // Balance Setup
         pArr[0].status = "Government";
         let currentGovSeats = pArr[0].seats;
         for(let i=1; i<pArr.length; i++){
@@ -141,6 +140,19 @@ export const engine = {
         ui.updateMain();
     },
 
+    // --- NEW: Individual Lobbying ---
+    buyCobra(mpId) {
+        const mp = state.leaders.find(l => l.id === mpId);
+        const cost = 10000000; // 10M per MP
+        if (state.player.personalFunds < cost) { alert("เงินส่วนตัวไม่เพียงพอ"); return; }
+        
+        state.player.personalFunds -= cost;
+        mp.isCobra = true;
+        mp.loyalty = 0; // Betrays original party
+        this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} ตกลงรับข้อเสนอพิเศษ (สถานะ: งูเห่า)`);
+        ui.updateMain();
+    },
+
     adjustStance(type, newValue) {
         if(state.player.personalFunds < 50000000) return;
         state.player.personalFunds -= 50000000;
@@ -175,9 +187,19 @@ export const engine = {
             let score = state.factions.find(fx => fx.name === mp.status)?.approval || 50;
             if(mp.party.status === "Opposition") score -= 40;
             if(mp.party.status === "Government") score += 30;
-            if(mp.party.status === "Government" && mp.loyalty < 40 && Math.random() < 0.2) yes++; 
-            else if(mp.party.status === "Opposition" && Math.random() < 0.05) no++;
-            else { if (score < 50) yes++; else no++; }
+
+            // Cobra Logic for No-Confidence
+            let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.3) || mp.isCobra;
+
+            if(mp.party.status === "Government") {
+                if(voteAgainstParty) yes++; // Gov MP betrays Gov
+                else no++;
+            } else if(mp.party.status === "Opposition") {
+                if(voteAgainstParty) no++; // Opp MP helps Gov
+                else yes++;
+            } else {
+                if (score < 50) yes++; else no++;
+            }
         });
         document.getElementById('vote-count-yes').innerText = yes; document.getElementById('vote-count-no').innerText = no;
         const ousted = yes > 250;
@@ -201,6 +223,7 @@ export const engine = {
         document.getElementById('event-modal').classList.remove('hidden');
     },
 
+    // --- UPGRADED: Individual Member Voting Logic ---
     runVote(pName) {
         const p = state.activePolicies.find(x => x.name === pName);
         let yes = 0, no = 0;
@@ -208,11 +231,19 @@ export const engine = {
             let score = state.factions.find(fx => fx.name === mp.status)?.approval || 50;
             if (mp.party.ideologies.includes(p.ideology)) score += 35;
             score += (p.coalitionBoost || 0); 
-            if(mp.party.status === "Opposition") score -= 15;
 
-            if (mp.party.status === "Government" && mp.loyalty < 30 && Math.random() < 0.15) no++; 
-            else if (mp.party.status === "Opposition" && p.proposer === "รัฐบาล") score -= 30;
-            if (score > 50) yes++; else no++;
+            // Individual Choice vs Party Whip
+            let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra;
+
+            if(mp.party.status === "Government") {
+                if (voteAgainstParty) no++; // Cobra in Government
+                else yes++;
+            } else if (mp.party.status === "Opposition") {
+                if (voteAgainstParty) yes++; // Cobra in Opposition (supports Gov bill)
+                else no++;
+            } else {
+                if (score > 50) yes++; else no++;
+            }
         });
         ui.displayResults(p, yes, no);
     },
