@@ -7,20 +7,80 @@ export const ui = {
         document.querySelectorAll('main > div').forEach(d => d.classList.add('hidden')); 
         const target = document.getElementById(`tab-${t}`); if(target) target.classList.remove('hidden');
         document.querySelectorAll('.tab-btn').forEach(b => { const clickAttr = b.getAttribute('onclick'); b.classList.toggle('tab-active', clickAttr && clickAttr.includes(t)); });
+        // Render graphs if dashboard is opened
+        if (t === 'dashboard') this.renderTrendGraphs();
     },
     updateHUD() {
         const els = { 'hud-date': state.date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }), 'hud-budget': `฿${(state.world.nationalBudget / 1e12).toFixed(2)}T`, 'hud-approval-text': `${state.world.approval.toFixed(0)}%`, 'hud-personal-display': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'hud-personal-sidebar': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'hud-personal-top': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 'stat-cabinet-stability-display': `เสถียรภาพ ครม: ${state.world.cabinetStability}%`, 'stat-cabinet-stability-hud': `${state.world.cabinetStability}%`, 'stat-growth-sidebar': `${state.world.growth > 0 ? '+' : ''}${state.world.growth.toFixed(1)}%` };
         for (const [id, val] of Object.entries(els)) { const el = document.getElementById(id); if(el) el.innerText = val; }
         const bar = document.getElementById('hud-approval-bar'); if (bar) bar.style.width = `${state.world.approval}%`;
     },
-    updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); },
+    updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); },
     
+    // --- NEW: Visual Trends (Sparklines) ---
+    renderTrendGraphs() {
+        const createSparkline = (id, data, color) => {
+            const container = document.getElementById(id);
+            if (!container) return;
+            // Simple SVG generation
+            const max = Math.max(...data) * 1.1 || 100;
+            const min = Math.min(...data) * 0.9 || 0;
+            const width = 100; const height = 40;
+            const points = data.map((d, i) => {
+                const x = (i / (data.length - 1)) * width;
+                const y = height - ((d - min) / (max - min)) * height;
+                return `${x},${y}`;
+            }).join(" ");
+            container.innerHTML = `<svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="${color}" stroke-width="2" points="${points}"/></svg>`;
+        };
+        // Inject containers if not exists
+        if (!document.getElementById('trend-approval')) {
+            const dashboard = document.getElementById('news-headline').parentElement.parentElement; 
+            // Warning: DOM manipulation depends on HTML structure. Assuming dashboard layout.
+             // We can insert this dynamically into the dashboard sidebar or main area.
+             // For safety, let's look for specific ID or append to dashboard tab
+        }
+        // Assuming we added divs with these IDs in HTML or we inject them now:
+        const feed = document.getElementById('news-feed');
+        if (feed && !document.getElementById('trend-container')) {
+            const div = document.createElement('div');
+            div.id = 'trend-container';
+            div.className = "grid grid-cols-2 gap-4 mb-4 bg-[#1a1c23] p-4 rounded-xl border border-zinc-800";
+            div.innerHTML = `
+                <div><div class="text-[9px] text-zinc-500 uppercase">Approval Trend</div><div id="trend-approval" class="h-10 mt-1"></div></div>
+                <div><div class="text-[9px] text-zinc-500 uppercase">Budget Trend</div><div id="trend-budget" class="h-10 mt-1"></div></div>
+            `;
+            feed.parentElement.insertAdjacentElement('beforebegin', div);
+        }
+        
+        if (state.history.approval.length > 1) {
+            createSparkline('trend-approval', state.history.approval, '#eab308');
+            createSparkline('trend-budget', state.history.budget, '#60a5fa');
+        }
+    },
+
     renderPartyHQ() {
         const p = state.player.party; if(!p) return;
         const idCont = document.getElementById('my-party-ideologies');
         const glCont = document.getElementById('my-party-goals');
         if(idCont) idCont.innerHTML = p.ideologies.map(i => `<span class="badge-ideology text-white">${i}</span>`).join("");
         if(glCont) glCont.innerHTML = p.goals.map(g => `<span class="badge-goal font-sans">${g}</span>`).join("");
+        
+        // Add Transparency Display in HQ
+        if (!document.getElementById('transparency-display')) {
+             const cont = document.getElementById('my-party-goals').parentElement.parentElement;
+             const div = document.createElement('div');
+             div.id = 'transparency-display';
+             div.className = "mt-4 border-t border-zinc-700 pt-4";
+             cont.appendChild(div);
+        }
+        const tVal = state.world.transparency;
+        const tColor = tVal > 70 ? 'text-emerald-400' : (tVal > 40 ? 'text-yellow-500' : 'text-red-500 animate-pulse');
+        document.getElementById('transparency-display').innerHTML = `
+            <div class="flex justify-between items-center"><span class="text-xs font-bold text-zinc-400">ดัชนีความโปร่งใส (Transparency)</span><span class="font-mono font-bold ${tColor}">${tVal}%</span></div>
+            <div class="w-full bg-black h-1.5 rounded-full mt-2 overflow-hidden"><div class="h-full bg-white transition-all" style="width:${tVal}%"></div></div>
+            <div class="text-[8px] text-zinc-600 mt-1 italic">ระวัง: หากต่ำกว่า 40% มีความเสี่ยงถูกรัฐประหาร</div>
+        `;
     },
 
     showPartyAdjustModal(type) {
@@ -138,6 +198,47 @@ export const ui = {
             cont.appendChild(el);
         });
     },
+
+    showQuidProQuo(p, demand, party) {
+        this.resetModalState();
+        document.getElementById('event-title').innerText = `ข้อเสนอแลกเปลี่ยน (Quid Pro Quo)`;
+        document.getElementById('event-desc').innerHTML = `
+            <div class="bg-red-900/30 p-6 rounded-xl border border-red-600 text-left font-sans space-y-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xl" style="color:${party.color}">${party.name.charAt(0)}</div>
+                    <div>
+                        <div class="font-bold text-lg text-white">ข้อเสนอจาก: ${party.name}</div>
+                        <div class="text-xs text-zinc-400">พรรคร่วมรัฐบาล</div>
+                    </div>
+                </div>
+                <p class="text-zinc-300 text-sm">"ทางเรายินดีจะโหวตสนับสนุนร่าง <b>${p.name}</b> ของท่านอย่างเต็มที่ แต่มีเงื่อนไขว่าท่านต้องอนุมัตินโยบายของเราทันที"</p>
+                <div class="bg-black/50 p-4 rounded-lg border border-zinc-700">
+                    <div class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">สิ่งที่ต้องการ</div>
+                    <div class="text-red-400 font-bold text-lg serif">${demand.name}</div>
+                    <div class="text-xs text-zinc-400 mt-1">งบประมาณที่ใช้: ฿${(demand.cost/1e9).toFixed(1)}B</div>
+                </div>
+            </div>
+        `;
+        document.getElementById('event-options').innerHTML = `
+            <button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", true)' class="w-full p-4 bg-emerald-700 hover:bg-emerald-600 rounded-xl font-bold text-white font-sans shadow-lg mb-2">
+                ยอมรับข้อเสนอ (จ่ายเงินแลกเสียงโหวต)
+            </button>
+            <button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", false)' class="w-full p-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-bold text-zinc-400 font-sans border border-zinc-700">
+                ปฏิเสธ (เสี่ยงถูกโหวตสวน)
+            </button>
+        `;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
+
+    showVoteInterface(pName) {
+        const p = state.activePolicies.find(x => x.name === pName);
+        gameClock.setSpeed(0); this.resetModalState();
+        document.getElementById('event-title').innerText = `สภาลงมติ: ${p.name}`;
+        document.getElementById('voting-display').classList.remove('hidden');
+        document.getElementById('event-options').innerHTML = `<button onclick="engine.runVote('${p.name}')" class="w-full p-4 bg-red-700 hover:bg-red-600 rounded-xl font-bold text-white font-sans">ลงมติ</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
+
     displayResults(p, y, n) {
         this.resetModalState();
         document.getElementById('voting-display').classList.remove('hidden');
@@ -167,10 +268,14 @@ export const ui = {
                 <div class="h-1 bg-black rounded-full overflow-hidden mt-2 font-sans"><div class="h-full bg-blue-500 progress-fill" style="width: ${f.approval}%"></div></div>
             </div>`).join("");
     },
+    
+    // --- UPGRADED: Parliament Heatmap ---
     renderParliament() {
         const chart = document.getElementById('parliament-chart'); const table = document.getElementById('party-stat-table'); if(!chart || !table) return;
         chart.innerHTML = ""; table.innerHTML = "";
         let gT = 0, oT = 0, nT = 0;
+        
+        // Render Stats Table
         state.parties.sort((a,b) => b.seats - a.seats).forEach(p => {
             const tag = p.status === "Government" ? "govt-tag" : (p.status === "Opposition" ? "opp-tag" : "neu-tag");
             const label = p.status === "Government" ? "รัฐบาล" : (p.status === "Opposition" ? "ฝ่ายค้าน" : "วางเฉย");
@@ -186,10 +291,33 @@ export const ui = {
         if(summary) summary.innerHTML = `<div class="flex justify-between text-xs text-white font-sans"><span>รัฐบาล:</span> <span class="text-blue-400 font-bold font-sans">${gT}</span></div>
             <div class="flex justify-between text-xs mt-1 text-white font-sans"><span>ฝ่ายค้าน:</span> <span class="text-red-400 font-bold font-sans">${oT}</span></div>
             <div class="flex justify-between text-xs border-t border-zinc-800 pt-2 mt-2 text-white text-white"><span>วางเฉย:</span> <span class="text-zinc-500 font-sans">${nT}</span></div>`;
-        state.leaders.forEach(l => { const dot = document.createElement('div'); dot.className = "voting-dot shadow-sm"; dot.style.backgroundColor = l.party.color; chart.appendChild(dot); });
+        
+        // Heatmap Logic for Dots
+        state.leaders.forEach(l => { 
+            const dot = document.createElement('div'); 
+            dot.className = "voting-dot shadow-sm"; 
+            
+            if (state.lastVoteResults) {
+                // If viewing voting results
+                const result = state.lastVoteResults.find(r => r.id === l.id);
+                if (result) {
+                    if (result.vote === 'yes') dot.style.backgroundColor = '#10b981'; // Green
+                    else if (result.vote === 'no') dot.style.backgroundColor = '#ef4444'; // Red
+                    else dot.style.backgroundColor = '#52525b'; // Grey
+                    
+                    if (result.isRebel) {
+                         dot.classList.add('animate-pulse');
+                         dot.style.boxShadow = '0 0 4px white';
+                    }
+                }
+            } else {
+                // Normal view
+                dot.style.backgroundColor = l.party.color; 
+            }
+            chart.appendChild(dot); 
+        });
     },
 
-    // --- UPGRADED: AI List with Lobbying Button ---
     renderAI() {
         const cont = document.getElementById('ai-list'); if(!cont) return;
         cont.innerHTML = state.leaders.slice(0, 15).map(l => {
