@@ -17,14 +17,14 @@ export const ui = {
     },
     updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); if(!document.getElementById('tab-mps').classList.contains('hidden')) this.renderMPList(); },
     
-    // --- HELPER: สร้างไอคอนพร้อม Tooltip (ใช้ร่วมกันทั้งหน้าทำเนียบและหน้าเลือก ครม.) ---
-    createIconWithTooltip(iconClass, colorClass, title, subtitle = "") {
+    // --- Helper: Create Icon with Tooltip ---
+    createIcon(iconClass, colorClass, title, subtitle = "") {
         return `
-            <div class="group relative inline-flex items-center justify-center w-8 h-8 bg-zinc-800 rounded-full border border-zinc-700 hover:bg-zinc-600 cursor-help transition shrink-0">
+            <div class="group relative inline-flex items-center justify-center w-8 h-8 bg-zinc-800 rounded-full border border-zinc-700 hover:bg-zinc-700 cursor-help transition">
                 <i class="fas ${iconClass} ${colorClass}"></i>
-                <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block w-max max-w-[180px] bg-black text-white text-[10px] p-2 rounded shadow-xl border border-zinc-600 z-[999] pointer-events-none">
-                    <div class="font-bold text-center border-b border-zinc-700 pb-1 mb-1 text-emerald-400">${title}</div>
-                    ${subtitle ? `<div class="text-zinc-300 text-center leading-tight">${subtitle}</div>` : ''}
+                <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block w-max max-w-[150px] bg-black text-white text-[10px] p-2 rounded shadow-xl border border-zinc-600 z-50 pointer-events-none">
+                    <div class="font-bold text-center border-b border-zinc-700 pb-1 mb-1">${title}</div>
+                    ${subtitle ? `<div class="text-zinc-400 text-center">${subtitle}</div>` : ''}
                     <div class="absolute w-2 h-2 bg-black border-r border-b border-zinc-600 rotate-45 -bottom-1 left-1/2 -translate-x-1/2"></div>
                 </div>
             </div>
@@ -52,10 +52,10 @@ export const ui = {
         filtered.slice(0, 100).forEach(l => { 
             const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
             
-            const ideologyIcon = this.createIconWithTooltip(Data.TRAIT_ICONS[l.trait.ideology] || 'fa-question', 'text-blue-400', l.trait.ideology, 'แนวคิดทางการเมือง');
-            const goalIcon = this.createIconWithTooltip(Data.TRAIT_ICONS[l.trait.goal] || 'fa-crosshairs', 'text-purple-400', l.trait.goal, 'เป้าหมายหลัก');
-            const abilityIcon = this.createIconWithTooltip(l.trait.ability.icon, 'text-orange-400', l.trait.ability.name, l.trait.ability.desc);
-            const socioIcon = this.createIconWithTooltip(l.trait.socio.icon, 'text-emerald-400', l.trait.socio.name, `ความมั่งคั่ง: ฿${l.trait.socio.baseWealth}M`);
+            const ideologyIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', l.trait.ideology);
+            const goalIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', l.trait.goal);
+            const abilityIcon = this.createIcon(l.trait.ability.icon, 'text-orange-400', l.trait.ability.name, l.trait.ability.desc);
+            const socioIcon = this.createIcon(l.trait.socio.icon, 'text-emerald-400', l.trait.socio.name, `ความมั่งคั่ง: ฿${l.trait.socio.baseWealth}M`);
 
             html += `<tr class="hover:bg-zinc-800/50 transition">
                 <td class="p-3 font-bold">
@@ -69,7 +69,7 @@ export const ui = {
                     </div>
                 </td>
                 <td class="p-3 text-center">
-                    <div class="flex justify-center gap-1.5">
+                    <div class="flex justify-center gap-2">
                         ${ideologyIcon}
                         ${goalIcon}
                         ${abilityIcon}
@@ -89,6 +89,75 @@ export const ui = {
         html += `</tbody></table>`;
         if(filtered.length > 100) html += `<div class="p-2 text-center text-zinc-500 italic text-[10px]">แสดง 100 จาก ${filtered.length} รายชื่อ (กรุณาค้นหาเพิ่มเติม)</div>`;
         cont.innerHTML = html;
+    },
+
+    // --- UPGRADED: Cabinet Appointment Modal (Similar to Roster) ---
+    showAppointModal(mName) {
+        this.resetModalState();
+        
+        let html = `<div class="space-y-2 max-h-[500px] overflow-y-auto pr-2 scroll-custom text-black">
+            <table class="w-full text-left font-sans text-xs text-white border-collapse">
+                <thead class="bg-black/50 text-zinc-400 uppercase tracking-wider sticky top-0 z-10">
+                    <tr>
+                        <th class="p-3">ชื่อ - สกุล</th>
+                        <th class="p-3">สังกัด</th>
+                        <th class="p-3 text-center">คุณสมบัติ (Traits)</th>
+                        <th class="p-3 text-center">Loyalty</th>
+                        <th class="p-3 text-center">เลือก</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-zinc-800">`;
+
+        // Filter only MPs from Government parties
+        const govtParties = state.parties.filter(p => p.status === "Government");
+        let candidateCount = 0;
+
+        govtParties.forEach(p => {
+            const candidates = state.leaders.filter(l => l.party.id === p.id);
+            candidates.forEach(l => {
+                candidateCount++;
+                const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
+                
+                // Icons for Cabinet Selection
+                const ideologyIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', l.trait.ideology);
+                const abilityIcon = this.createIcon(l.trait.ability.icon, 'text-orange-400', l.trait.ability.name, l.trait.ability.desc);
+                const goalIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', l.trait.goal);
+
+                html += `<tr class="hover:bg-zinc-800/50 transition">
+                    <td class="p-3 font-bold">
+                        ${l.name}
+                        <div class="text-[9px] font-normal text-zinc-500">${l.trait.socio.name}</div>
+                    </td>
+                    <td class="p-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full" style="background:${l.party.color}"></div>
+                            <span class="text-[10px]">${l.party.name}</span>
+                        </div>
+                    </td>
+                    <td class="p-3 text-center">
+                        <div class="flex justify-center gap-1">
+                            ${abilityIcon}
+                            ${ideologyIcon}
+                            ${goalIcon}
+                        </div>
+                    </td>
+                    <td class="p-3 text-center font-mono font-bold ${loyaltyColor}">${l.loyalty.toFixed(0)}%</td>
+                    <td class="p-3 text-center">
+                        <button onclick="engine.appointMinister('${mName}', ${l.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="bg-zinc-100 hover:bg-emerald-500 hover:text-white text-black px-3 py-1 rounded text-[10px] font-bold transition shadow-sm">
+                            แต่งตั้ง
+                        </button>
+                    </td>
+                </tr>`;
+            });
+        });
+
+        html += `</tbody></table></div>`;
+        if (candidateCount === 0) html = `<div class="p-8 text-center text-zinc-500 italic">ไม่พบ สส. ฝ่ายรัฐบาลที่ว่างอยู่</div>`;
+
+        document.getElementById('event-title').innerText = `แต่งตั้ง รมว. (${mName})`;
+        document.getElementById('event-desc').innerHTML = `<p class="text-xs mb-4 text-zinc-400 italic text-left font-sans">เลือกผู้ที่เหมาะสมจากพรรคร่วมรัฐบาล (แนะนำให้ดู <b>ความสามารถ</b> และ <b>เป้าหมาย</b> ที่สอดคล้องกับกระทรวง)</p>${html}`;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-800 rounded-xl font-bold text-zinc-400 hover:bg-zinc-700 font-sans border border-zinc-700">ยกเลิก</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
     },
 
     showMPActionModal(id) {
@@ -117,10 +186,19 @@ export const ui = {
                         </div>
                     </div>
                 </div>
+
                 <div class="bg-black/40 p-4 rounded-xl border border-zinc-700 space-y-2">
                     <div class="text-[10px] text-zinc-500 uppercase font-bold border-b border-zinc-800 pb-1 mb-2">คุณลักษณะพิเศษ</div>
-                    <div class="flex items-center gap-2 text-xs"><i class="fas ${Data.TRAIT_ICONS[l.trait.ideology]} text-blue-400 w-4 text-center"></i><span class="text-zinc-400">แนวคิด:</span> <span class="text-white">${l.trait.ideology}</span></div>
-                    <div class="flex items-center gap-2 text-xs"><i class="fas ${Data.TRAIT_ICONS[l.trait.goal]} text-purple-400 w-4 text-center"></i><span class="text-zinc-400">เป้าหมาย:</span> <span class="text-white">${l.trait.goal}</span></div>
+                    
+                    <div class="flex items-center gap-2 text-xs">
+                        <i class="fas ${Data.TRAIT_ICONS[l.trait.ideology]} text-blue-400 w-4 text-center"></i>
+                        <span class="text-zinc-400">แนวคิด:</span> <span class="text-white">${l.trait.ideology}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs">
+                        <i class="fas ${Data.TRAIT_ICONS[l.trait.goal]} text-purple-400 w-4 text-center"></i>
+                        <span class="text-zinc-400">เป้าหมาย:</span> <span class="text-white">${l.trait.goal}</span>
+                    </div>
+
                     <div class="bg-zinc-800/50 p-2 rounded mt-2 flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${l.trait.ability.icon} text-orange-400"></i></div>
                         <div>
@@ -130,73 +208,37 @@ export const ui = {
                     </div>
                 </div>
             </div>
+
             <div class="bg-zinc-900 p-4 rounded-xl border border-zinc-800 mb-4 flex justify-between items-center shadow-inner">
                 <div class="text-xs text-zinc-400 uppercase tracking-widest">สถานะความภักดี (Loyalty)</div>
                 <div class="text-2xl font-black font-mono ${l.loyalty > 50 ? 'text-emerald-500' : 'text-red-500'}">${l.loyalty.toFixed(0)}%</div>
             </div>
+
             <div class="grid grid-cols-1 gap-3">
-                <button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-4 rounded-xl border border-zinc-700 transition group items-center"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded bg-emerald-900/50 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-black transition"><i class="fas fa-handshake"></i></div><span class="font-bold text-sm text-white group-hover:text-emerald-300">กระชับความสัมพันธ์ (Lobby)</span></div><span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span></button>
-                <button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'}><div class="flex items-center gap-3"><div class="w-8 h-8 rounded bg-red-900/50 flex items-center justify-center group-hover:bg-red-500 group-hover:text-black transition"><i class="fas fa-snake"></i></div><span class="font-bold text-sm text-white group-hover:text-red-300">ซื้อตัวงูเห่า (Secret Deal)</span></div><span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span></button>
-                <button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'}><div class="flex items-center gap-3"><div class="w-8 h-8 rounded bg-purple-900/50 flex items-center justify-center group-hover:bg-purple-500 group-hover:text-black transition"><i class="fas fa-right-left"></i></div><span class="font-bold text-sm text-white group-hover:text-purple-300">ดูดเข้าพรรค (Force Switch)</span></div><span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span></button>
+                <button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between bg-zinc-800 hover:bg-emerald-900 p-4 rounded-xl border border-zinc-700 transition group items-center">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-emerald-900/50 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-black transition"><i class="fas fa-handshake"></i></div>
+                        <span class="font-bold text-sm text-white group-hover:text-emerald-300">กระชับความสัมพันธ์ (Lobby)</span>
+                    </div>
+                    <span class="font-mono text-zinc-400">฿${(lobbyCost/1e6).toFixed(1)}M</span>
+                </button>
+                <button onclick="engine.buyCobra(${l.id})" ${isMyParty || l.isCobra ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-red-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'} >
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-red-900/50 flex items-center justify-center group-hover:bg-red-500 group-hover:text-black transition"><i class="fas fa-snake"></i></div>
+                        <span class="font-bold text-sm text-white group-hover:text-red-300">ซื้อตัวงูเห่า (Secret Deal)</span>
+                    </div>
+                    <span class="font-mono text-zinc-400">฿${(cobraCost/1e6).toFixed(1)}M</span>
+                </button>
+                <button onclick="engine.forceSwitchParty(${l.id})" ${isMyParty ? 'disabled class="opacity-50 cursor-not-allowed bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center"' : 'class="flex justify-between bg-zinc-800 hover:bg-purple-900 p-4 rounded-xl border border-zinc-700 transition group items-center"'} >
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-purple-900/50 flex items-center justify-center group-hover:bg-purple-500 group-hover:text-black transition"><i class="fas fa-right-left"></i></div>
+                        <span class="font-bold text-sm text-white group-hover:text-purple-300">ดูดเข้าพรรค (Force Switch)</span>
+                    </div>
+                    <span class="font-mono text-zinc-400">฿${(switchCost/1e6).toFixed(1)}M</span>
+                </button>
             </div>
         `;
         document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden');" class="w-full p-3 bg-zinc-900 rounded-xl text-zinc-400 hover:bg-zinc-800 font-bold border border-zinc-800">ปิดหน้าต่าง</button>`;
-        document.getElementById('event-modal').classList.remove('hidden');
-    },
-
-    // --- UPGRADED: Cabinet Appointment with Detailed Roster Style ---
-    showAppointModal(mName) {
-        this.resetModalState();
-        const govtParties = state.parties.filter(p => p.status === "Government");
-        
-        // สร้าง List Candidates
-        let listHTML = `<div class="space-y-3 max-h-[400px] overflow-y-auto pr-2 scroll-custom text-white">`;
-        
-        govtParties.forEach(p => {
-            // ดึงตัวแทนพรรค (ในอนาคตอาจจะเลือกได้ทุกคน แต่ตอนนี้เอาตัวหลักของพรรคมาโชว์ก่อน)
-            const candidate = state.leaders.find(l => l.party.id === p.id);
-            if(!candidate) return;
-
-            // สร้าง Icons
-            const ideologyIcon = this.createIconWithTooltip(Data.TRAIT_ICONS[candidate.trait.ideology] || 'fa-question', 'text-blue-400', candidate.trait.ideology, 'แนวคิด');
-            const goalIcon = this.createIconWithTooltip(Data.TRAIT_ICONS[candidate.trait.goal] || 'fa-crosshairs', 'text-purple-400', candidate.trait.goal, 'เป้าหมาย');
-            const abilityIcon = this.createIconWithTooltip(candidate.trait.ability.icon, 'text-orange-400', candidate.trait.ability.name, candidate.trait.ability.desc);
-            const socioIcon = this.createIconWithTooltip(candidate.trait.socio.icon, 'text-emerald-400', candidate.trait.socio.name, `ความมั่งคั่ง: ฿${candidate.trait.socio.baseWealth}M`);
-
-            listHTML += `
-                <div class="bg-[#2a2d35] p-4 rounded-xl flex justify-between items-center shadow-md border-l-4 hover:bg-[#323640] transition border-zinc-700" style="border-left-color:${p.color}">
-                    
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <div class="font-bold text-sm text-white">${candidate.name}</div>
-                            <div class="text-[10px] bg-black/30 px-2 py-0.5 rounded text-zinc-300 font-bold">${p.name}</div>
-                        </div>
-                        <div class="flex gap-2">
-                            ${ideologyIcon}
-                            ${goalIcon}
-                            ${abilityIcon}
-                            ${socioIcon}
-                        </div>
-                    </div>
-
-                    <button onclick="engine.appointMinister('${mName}', ${candidate.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" 
-                        class="bg-black hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition shadow-lg border border-zinc-600">
-                        เลือกคนนี้
-                    </button>
-                </div>
-            `;
-        });
-        listHTML += `</div>`;
-
-        document.getElementById('event-title').innerText = `แต่งตั้ง รมว. ${mName}`;
-        document.getElementById('event-desc').innerHTML = `
-            <div class="mb-4 text-zinc-400 text-sm bg-black/20 p-3 rounded-lg border border-zinc-800">
-                <i class="fas fa-info-circle text-blue-400 mr-2"></i>
-                เลือกตัวแทนจากพรรคร่วมรัฐบาลที่มี <b>ความสามารถ (Ability)</b> และ <b>แนวคิด</b> เหมาะสมกับกระทรวง เพื่อเพิ่มประสิทธิภาพสูงสุด
-            </div>
-            ${listHTML}
-        `;
-        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 bg-zinc-800 rounded-xl font-bold text-zinc-400 hover:text-white transition">ย้อนกลับ</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
     },
 
