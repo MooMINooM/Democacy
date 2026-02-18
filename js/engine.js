@@ -15,63 +15,55 @@ export const gameClock = {
         Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; });
         state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
         
-        // AI Propose Policy
         if(state.date.getDate() === 15 && Math.random() < 0.1) engine.aiPropose();
-        
-        // No Confidence Motion Check
         if(state.date.getDate() === 28 && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
            if(Math.random() < 0.05) engine.triggerNoConfidence();
         }
-
-        // Crisis Check (New)
         if(Math.random() < 0.02) engine.triggerCrisis();
-
-        // Coup Risk Check (Transparency System)
         if(state.world.transparency < 40 && Math.random() < 0.05) {
              const army = state.factions.find(f => f.name === "กองทัพ");
              if(army && army.approval < 50) engine.triggerCoup();
         }
         
-        // Daily Approval Shift
         state.factions.forEach(f => { f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5)); });
-        
-        // Monthly Update
         if (state.date.getDate() === 1) engine.processMonthlyUpdate();
-        
         ui.updateMain();
     }
 };
 
 export const engine = {
     init() {
-        // Init New Stats
         state.voteModifier = null; 
-        state.world.transparency = 100; // Start with full transparency
-        state.history = { approval: [], budget: [] }; // For Trend Graphs
-        state.lastVoteResults = null; // For Heatmap
+        state.world.transparency = 100; 
+        state.history = { approval: [], budget: [] }; 
+        state.lastVoteResults = null; 
+        state.lastVoteLog = []; // Detailed vote log
 
         state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5) }));
         if(state.parties.length === 0) state.parties = this.generateGameParties();
         state.leaders = [];
         let nIdx = 0;
+        
+        // Generate MPs with Traits
         state.parties.forEach(p => {
             for(let i=0; i<p.seats; i++) {
+                const trait = Data.MP_TRAITS[Math.floor(Math.random() * Data.MP_TRAITS.length)];
                 state.leaders.push({
-                    id: state.leaders.length, name: Data.ALL_MP_NAMES[nIdx++] || `สส.นิรนาม ${state.leaders.length}`,
-                    party: p, status: i === 0 ? p.baseFaction : Data.FACTION_NAMES[Math.floor(Math.random()*17)],
-                    prestige: Math.floor(Math.random() * 100), loyalty: 40 + Math.random() * 60, isCobra: false
+                    id: state.leaders.length, 
+                    name: Data.ALL_MP_NAMES[nIdx++] || `สส.นิรนาม ${state.leaders.length}`,
+                    party: p, 
+                    status: i === 0 ? p.baseFaction : Data.FACTION_NAMES[Math.floor(Math.random()*17)],
+                    prestige: Math.floor(Math.random() * 100), 
+                    loyalty: 40 + Math.random() * 60, 
+                    isCobra: false,
+                    trait: trait, // Assign Trait
+                    cash: Math.floor(Math.random() * 50) + 10 // MP Personal Wealth (Millions)
                 });
             }
         });
         ui.renderCabinet(); ui.renderMinistryList();
         this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
-        
-        // Initial History Data
-        for(let i=0; i<6; i++) {
-             state.history.approval.push(50);
-             state.history.budget.push(state.world.nationalBudget);
-        }
-
+        for(let i=0; i<6; i++) { state.history.approval.push(50); state.history.budget.push(state.world.nationalBudget); }
         setInterval(() => gameClock.tick(), 1000);
     },
 
@@ -91,46 +83,32 @@ export const engine = {
                 status: "Opposition", seats: 0 
             });
         }
-
         let rSeats = 500;
         pArr.forEach((p) => {
             let s = p.size === "Major" ? 35 + Math.random()*25 : (p.size === "Medium" ? 15 + Math.random()*15 : 2 + Math.random()*8);
             p.seats = Math.floor(s); rSeats -= p.seats;
         });
         pArr[0].seats += rSeats;
-
-        // Force 250+ Majority Logic
+        
         pArr[0].status = "Government";
         let currentGovSeats = pArr[0].seats;
-        
-        // Round 1: Ideology Match
         for(let i=1; i<pArr.length; i++) {
             if (currentGovSeats > 250) break;
             let conflict = false;
             pArr[i].ideologies.forEach(ideo => {
                 if(Data.IDEOLOGY_CONFLICTS[ideo] && Data.IDEOLOGY_CONFLICTS[ideo].some(c => pArr[0].ideologies.includes(c))) conflict = true;
             });
-            if (!conflict) {
-                pArr[i].status = "Government";
-                currentGovSeats += pArr[i].seats;
-            }
+            if (!conflict) { pArr[i].status = "Government"; currentGovSeats += pArr[i].seats; }
         }
-
-        // Round 2: Force Join if needed
         if (currentGovSeats <= 250) {
             for(let i=1; i<pArr.length; i++) {
                 if (currentGovSeats > 250) break;
-                if (pArr[i].status !== "Government") {
-                    pArr[i].status = "Government";
-                    currentGovSeats += pArr[i].seats;
-                }
+                if (pArr[i].status !== "Government") { pArr[i].status = "Government"; currentGovSeats += pArr[i].seats; }
             }
         }
-
         for(let i=1; i<pArr.length; i++) {
             if (pArr[i].status !== "Government") {
-                if (pArr[i].seats > 40 || Math.random() > 0.5) pArr[i].status = "Opposition";
-                else pArr[i].status = "Neutral";
+                if (pArr[i].seats > 40 || Math.random() > 0.5) pArr[i].status = "Opposition"; else pArr[i].status = "Neutral";
             }
         }
         return pArr;
@@ -140,13 +118,8 @@ export const engine = {
     
     processMonthlyUpdate() {
         state.world.growth += (Math.random() - 0.5) * 0.1;
-        
-        // Update History for Graphs
-        state.history.approval.push(state.world.approval);
-        state.history.budget.push(state.world.nationalBudget);
-        if(state.history.approval.length > 6) state.history.approval.shift();
-        if(state.history.budget.length > 6) state.history.budget.shift();
-
+        state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
+        if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
         const govSeats = state.parties.filter(p => p.status === "Government").reduce((s, p) => s + p.seats, 0);
         let factionScore = 0; let minCount = 0;
         Object.values(Data.MINISTRIES).forEach(m => { if(m.currentMinister) { const f = state.factions.find(fx => fx.name === m.currentMinister.status); if(f) factionScore += f.approval; minCount++; } });
@@ -154,25 +127,72 @@ export const engine = {
         state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
     },
     
-    // --- CRISIS SYSTEM ---
+    // --- MP MANAGEMENT ACTIONS ---
+    lobbyIndividual(mpId) {
+        const mp = state.leaders.find(l => l.id === mpId);
+        const cost = 2000000; // 2M
+        if (state.player.personalFunds < cost) { alert("เงินไม่พอ"); return; }
+        state.player.personalFunds -= cost;
+        mp.loyalty = Math.min(100, mp.loyalty + 10);
+        mp.cash += 2;
+        this.addNews(`ล็อบบี้สำเร็จ: ${mp.name}`, `ความสัมพันธ์ดีขึ้น (+10 Loyalty)`);
+        ui.updateMain();
+    },
+
+    forceSwitchParty(mpId) {
+        const mp = state.leaders.find(l => l.id === mpId);
+        const cost = 50000000 * mp.trait.costMod; // 50M base * trait modifier
+        
+        if (mp.party.id === state.player.party.id) { alert("อยู่พรรคเดียวกันอยู่แล้ว"); return; }
+        if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        if (mp.trait.name === "คนดี" || mp.trait.name === "อุดมการณ์สูง") { alert(`สส. คนนี้ซื้อไม่ได้ หรือยากเกินไป`); return; }
+
+        state.player.personalFunds -= cost;
+        // Logic to switch party
+        mp.party.seats--; // Remove seat from old party
+        mp.party = state.player.party; // Assign to player party
+        mp.party.seats++; // Add seat to player party
+        mp.loyalty = 50; // Reset loyalty
+        mp.isCobra = false; // No longer a cobra if they officially switched
+        
+        state.world.transparency -= 15;
+        this.addNews(`ดูด สส. สำเร็จ!`, `${mp.name} ย้ายขั้วมาสังกัด ${state.player.party.name} อย่างเป็นทางการ`);
+        ui.updateMain();
+    },
+
+    buyCobra(mpId) {
+        const mp = state.leaders.find(l => l.id === mpId);
+        const cost = 10000000 * mp.trait.costMod; 
+        if (mp.isCobra) { alert("เป็นงูเห่าอยู่แล้ว"); return; }
+        if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        
+        // Transparency Penalty
+        state.world.transparency = Math.max(0, state.world.transparency - 5);
+
+        if (mp.trait.name === "คนดี") { alert("ปฏิเสธ: เป็นคนดี"); return; }
+        
+        // Success Chance based on Loyalty and Traits
+        const successChance = 100 - (mp.loyalty * mp.trait.loyaltyMod);
+        if (Math.random() * 100 > successChance) {
+             state.player.personalFunds -= (cost / 5); // Lose deposit
+             alert(`ดีลล้มเหลว! ${mp.name} ปฏิเสธ (สูญเงินมัดจำ)`);
+             return;
+        }
+        
+        state.player.personalFunds -= cost;
+        mp.isCobra = true; mp.loyalty = 0; mp.cash += 10;
+        this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} เป็นงูเห่า (Transparency -5)`);
+        ui.updateMain();
+    },
+
     triggerCrisis() {
         const type = Math.random() > 0.5 ? "Economic" : "Protest";
-        
         if (type === "Economic") {
             state.world.growth -= 2.5;
-            const labor = state.factions.find(f => f.name === "แรงงาน");
-            const unemployed = state.factions.find(f => f.name === "คนว่างงาน");
-            if(labor) labor.approval -= 20;
-            if(unemployed) unemployed.approval -= 25;
-            this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง ประชาชนเดือดร้อนหนัก");
+            this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง");
         } else {
-            const students = state.factions.find(f => f.name === "เด็กรุ่นใหม่");
-            const progressives = state.factions.find(f => f.name === "หัวก้าวหน้า");
-            if ((students && students.approval < 20) || (progressives && progressives.approval < 20)) {
-                state.world.cabinetStability -= 15;
-                state.world.approval -= 10;
-                this.addNews("ม็อบลงถนนขับไล่รัฐบาล!", "กลุ่มคนรุ่นใหม่และหัวก้าวหน้าชุมนุมใหญ่ เรียกร้องให้ยุบสภา");
-            }
+            state.world.cabinetStability -= 15;
+            this.addNews("ม็อบลงถนนขับไล่รัฐบาล!", "ประชาชนชุมนุมใหญ่ เรียกร้องให้ยุบสภา");
         }
         ui.updateMain();
     },
@@ -192,11 +212,7 @@ export const engine = {
             ui.updateMain(); return;
         }
         gameClock.setSpeed(0); ui.resetModalState();
-        const stakeholders = []; stakeholders.push(state.factions.find(f => f.name === p.target));
-        const sortedPos = Object.entries(p.impact).filter(([name]) => name !== p.target).sort((a,b) => b[1] - a[1]);
-        if (sortedPos.length > 0) stakeholders.push(state.factions.find(f => f.name === sortedPos[0][0]));
-        const sortedNeg = Object.entries(p.impact).sort((a,b) => a[1] - b[1]);
-        if (sortedNeg.length > 0 && !stakeholders.includes(state.factions.find(f => f.name === sortedNeg[0][0]))) { stakeholders.push(state.factions.find(f => f.name === sortedNeg[0][0])); }
+        const stakeholders = [state.factions.find(f => f.name === p.target)];
         while(stakeholders.length < 3) { let rf = state.factions[Math.floor(Math.random()*17)]; if(!stakeholders.includes(rf)) stakeholders.push(rf); }
         ui.showStakeholderReview(p, stakeholders, proposer);
     },
@@ -223,51 +239,11 @@ export const engine = {
         ui.updateMain();
     },
 
-    buyCobra(mpId) {
-        const mp = state.leaders.find(l => l.id === mpId);
-        const cost = 10000000; 
-        if (mp.isCobra) { alert("สส. ท่านนี้เป็นงูเห่าฝั่งเราอยู่แล้ว!"); return; }
-        if (state.player.personalFunds < cost) { alert("เงินส่วนตัวไม่เพียงพอ"); return; }
-        
-        // Transparency Penalty
-        state.world.transparency = Math.max(0, state.world.transparency - 5);
-
-        if (mp.party.status === "Opposition" || mp.party.status === "Neutral") {
-            if (mp.loyalty > 60) {
-                alert(`ล้มเหลว! สส. ${mp.name} มีความภักดีต่อพรรคสูงมาก (${mp.loyalty.toFixed(0)}%)`);
-                return;
-            }
-            if (mp.loyalty >= 30) {
-                const successChance = 100 - (mp.loyalty * 1.5); 
-                if (Math.random() * 100 > successChance) {
-                    state.player.personalFunds -= (cost / 2); 
-                    alert(`ดีลล้มเหลว! สส. ${mp.name} ปฏิเสธ (สูญเงิน ฿5M) ความโปร่งใสลดลง`);
-                    ui.updateMain();
-                    return;
-                }
-            }
-        } else if (mp.party.status === "Government" && mp.party.id !== state.player.party.id) {
-            if (mp.loyalty > 70) {
-                alert(`ล้มเหลว! สส. ${mp.name} ภักดีต่อพรรคร่วมมากเกินไป`);
-                return;
-            }
-        } else if (mp.party.id === state.player.party.id) {
-            alert("ใช้ระบบ Whip แทนการดีลลับ");
-            return;
-        }
-        
-        state.player.personalFunds -= cost;
-        mp.isCobra = true; mp.loyalty = 0; 
-        this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} เป็นงูเห่า (Transparency -5)`);
-        ui.updateMain();
-    },
-
     adjustStance(type, newValue) {
         if(state.player.personalFunds < 50000000) return;
         state.player.personalFunds -= 50000000;
         const p = state.player.party;
-        if(type === 'ideology') { p.ideologies.shift(); p.ideologies.push(newValue); }
-        else { p.goals.shift(); p.goals.push(newValue); }
+        if(type === 'ideology') { p.ideologies.shift(); p.ideologies.push(newValue); } else { p.goals.shift(); p.goals.push(newValue); }
         this.addNews(`พรรค ${p.name} ปรับอุดมการณ์`, `ประกาศเปลี่ยนจุดยืนเป็น ${newValue}`);
         ui.updateMain();
     },
@@ -275,7 +251,7 @@ export const engine = {
     lobbyCoalition(policyName) {
         if(state.player.personalFunds < 25000000) return;
         state.player.personalFunds -= 25000000;
-        state.world.transparency = Math.max(0, state.world.transparency - 2); // Small transparency hit
+        state.world.transparency = Math.max(0, state.world.transparency - 2);
         const p = state.activePolicies.find(x => x.name === policyName);
         if(p) p.coalitionBoost = (p.coalitionBoost || 0) + 10;
         this.addNews(`ดีลพรรคร่วม: ${p.name}`, "การล็อบบี้ทำให้พรรคร่วมมีแนวโน้มเห็นชอบมากขึ้น");
@@ -295,18 +271,11 @@ export const engine = {
         let yes = 0, no = 0; 
         state.leaders.forEach(mp => {
             let score = state.factions.find(fx => fx.name === mp.status)?.approval || 50;
-            if(mp.party.status === "Opposition") score -= 40;
-            if(mp.party.status === "Government") score += 30;
-
+            if(mp.party.status === "Opposition") score -= 40; if(mp.party.status === "Government") score += 30;
             let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.3) || mp.isCobra;
-
-            if(mp.party.status === "Government") {
-                if(voteAgainstParty) yes++; else no++;
-            } else if(mp.party.status === "Opposition") {
-                if(voteAgainstParty) no++; else yes++;
-            } else {
-                if (score < 50) yes++; else no++;
-            }
+            if(mp.party.status === "Government") { if(voteAgainstParty) yes++; else no++; }
+            else if(mp.party.status === "Opposition") { if(voteAgainstParty) no++; else yes++; }
+            else { if (score < 50) yes++; else no++; }
         });
         document.getElementById('vote-count-yes').innerText = yes; document.getElementById('vote-count-no').innerText = no;
         const ousted = yes > 250;
@@ -322,26 +291,15 @@ export const engine = {
     },
 
     startVote(pName) {
-        state.voteModifier = null; 
-        state.lastVoteResults = null; // Reset visual map
+        state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
         const p = state.activePolicies.find(x => x.name === pName);
-        
-        // Quid Pro Quo Interruption (30%)
         if (p.proposer === "รัฐบาล" && Math.random() < 0.3) {
             const coalitions = state.parties.filter(py => py.status === "Government" && py.id !== state.player.party.id);
             if (coalitions.length > 0) {
                 const badActor = coalitions[Math.floor(Math.random() * coalitions.length)];
-                const ministers = state.leaders.filter(l => l.party.id === badActor.id && Object.values(Data.MINISTRIES).some(m => m.currentMinister === l));
-                
-                if (ministers.length > 0) {
-                    const minister = ministers[Math.floor(Math.random() * ministers.length)];
-                    const ministryName = Object.keys(Data.MINISTRIES).find(k => Data.MINISTRIES[k].currentMinister === minister);
-                    const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === ministryName);
-                    if (demands.length > 0) {
-                        const demand = demands[Math.floor(Math.random() * demands.length)];
-                        ui.showQuidProQuo(p, demand, badActor);
-                        return; 
-                    }
+                const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === "การคลัง" || t.ministry === "คมนาคม"); // Simply verify demand exist
+                if (demands.length > 0) {
+                     ui.showQuidProQuo(p, demands[0], badActor); return; 
                 }
             }
         }
@@ -351,13 +309,9 @@ export const engine = {
     processQuidProQuo(pName, demandName, partyId, accepted) {
         const demand = Data.POLICY_TEMPLATES.find(x => x.name === demandName);
         const party = state.parties.find(x => x.id === partyId);
-
         if (accepted) {
-            state.world.nationalBudget -= demand.cost;
-            state.world.transparency = Math.max(0, state.world.transparency - 8); // Heavy transparency hit
-            Object.entries(demand.impact).forEach(([fn,v]) => { const fac = state.factions.find(x=>x.name===fn); if(fac) fac.approval += v; });
-            
-            this.addNews(`ดีลการเมือง: ${demand.name}`, `รัฐบาลอนุมัตินโยบายแลกเสียง (Transparency -8)`);
+            state.world.nationalBudget -= demand.cost; state.world.transparency = Math.max(0, state.world.transparency - 8);
+            this.addNews(`ดีลการเมือง: ${demand.name}`, `รัฐบาลอนุมัตินโยบายแลกเสียง`);
             state.voteModifier = { partyId: partyId, type: 'support' }; 
         } else {
             this.addNews(`ดีลล่ม! พรรคร่วมไม่พอใจ`, `การเจรจาแลกเปลี่ยนล้มเหลว`);
@@ -369,47 +323,29 @@ export const engine = {
     runVote(pName) {
         const p = state.activePolicies.find(x => x.name === pName);
         let yes = 0, no = 0;
-        
-        // Prepare Heatmap Data
-        state.lastVoteResults = [];
+        state.lastVoteResults = []; state.lastVoteLog = [];
 
         state.leaders.forEach(mp => {
             let score = state.factions.find(fx => fx.name === mp.status)?.approval || 50;
             if (mp.party.ideologies.includes(p.ideology)) score += 35;
             score += (p.coalitionBoost || 0); 
-
             if (state.voteModifier && mp.party.id === state.voteModifier.partyId) {
-                if (state.voteModifier.type === 'support') score += 100; 
-                if (state.voteModifier.type === 'rebel') score -= 100; 
+                if (state.voteModifier.type === 'support') score += 100; if (state.voteModifier.type === 'rebel') score -= 100; 
             }
-
             let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra;
-
-            if (mp.isCobra) {
-                 if(mp.party.status === "Government") voteAgainstParty = false; 
-                 if(mp.party.status === "Opposition") voteAgainstParty = true; 
-            }
+            if (mp.isCobra) { if(mp.party.status === "Government") voteAgainstParty = false; if(mp.party.status === "Opposition") voteAgainstParty = true; }
 
             let finalVote = "abstain";
-            if(mp.party.status === "Government") {
-                if (voteAgainstParty) finalVote = "no"; 
-                else { if(score > 50) finalVote = "yes"; else finalVote = "no"; }
-            } else if (mp.party.status === "Opposition") {
-                if (voteAgainstParty) finalVote = "yes"; 
-                else finalVote = "no";
-            } else {
-                if (score > 50) finalVote = "yes"; else finalVote = "no";
-            }
+            if(mp.party.status === "Government") { if (voteAgainstParty) finalVote = "no"; else { if(score > 50) finalVote = "yes"; else finalVote = "no"; } } 
+            else if (mp.party.status === "Opposition") { if (voteAgainstParty) finalVote = "yes"; else finalVote = "no"; } 
+            else { if (score > 50) finalVote = "yes"; else finalVote = "no"; }
 
-            // Save for Heatmap
             state.lastVoteResults.push({ id: mp.id, vote: finalVote, isRebel: voteAgainstParty });
+            state.lastVoteLog.push({ name: mp.name, party: mp.party.name, color: mp.party.color, vote: finalVote, isCobra: mp.isCobra, isRebel: voteAgainstParty });
 
             if (finalVote === "yes") yes++; else no++;
         });
-        
-        // Update Parliament Chart to show Heatmap
-        ui.renderParliament(); 
-        ui.displayResults(p, yes, no);
+        ui.renderParliament(); ui.displayResults(p, yes, no);
     },
 
     finalizeVote(pName, passed) {
@@ -424,11 +360,7 @@ export const engine = {
             }
         } else { state.activePolicies = state.activePolicies.filter(x => x.name !== pName); }
         document.getElementById('event-modal').classList.add('hidden'); 
-        
-        // Clear Heatmap
-        state.lastVoteResults = null;
-        ui.renderParliament(); 
-        
+        state.lastVoteResults = null; ui.renderParliament(); 
         ui.updateMain(); gameClock.setSpeed(1);
     }
 };
