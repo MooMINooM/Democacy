@@ -1,4 +1,3 @@
-// --- ฐานข้อมูลกลุ่มอำนาจ (Factions) ---
 export const FACTION_DATA = [
     { name: "กองทัพ", weight: 80, wealth: 70, basePop: 300000, icon: "fa-shield-halved" },
     { name: "หัวก้าวหน้า", weight: 60, wealth: 30, basePop: 5000000, icon: "fa-bolt" },
@@ -95,7 +94,6 @@ export const SOCIO_POOL = [
     { name: "นักวิชาการ", baseWealth: 12, costMod: 1.5, icon: "fa-book-open" }
 ];
 
-// (ส่วนที่เหลือของไฟล์ data.js คงเดิมตามที่คุณมี เช่น IDEOLOGY_CONFLICTS, MINISTRIES ฯลฯ)
 export const IDEOLOGY_CONFLICTS = {
     "เสรีนิยม": ["อำนาจนิยม", "ฟาสซิสต์"],
     "ประชาธิปไตย": ["อำนาจนิยม", "ฟาสซิสต์", "คอมมิวนิสต์"],
