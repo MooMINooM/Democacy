@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRAND POLITICAL SIMULATOR: DEEP STATE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;700&family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Link to Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="h-screen w-screen flex flex-col font-sans">
+
+    <!-- OVERLAY: SETUP -->
+    <div id="setup-overlay" class="fixed inset-0 z-[200] newspaper-bg p-8 flex flex-col overflow-y-auto text-black font-sans">
+        <div class="max-w-6xl mx-auto w-full flex flex-col h-full">
+            <div class="text-center mb-8">
+                <div class="text-sm font-bold tracking-widest uppercase mb-2">ฉบับพิเศษ • สารานุกรมพรรคการเมืองและการจัดตั้งรัฐบาล</div>
+                <h1 class="serif text-6xl font-bold border-y-4 border-black py-2 inline-block px-12 text-center text-black">THE NATIONAL OBSERVER</h1>
+                <div class="flex justify-between mt-2 text-xs font-bold uppercase px-4 text-black">
+                    <span>กรุงเทพมหานคร</span>
+                    <span id="setup-date">1 มกราคม 2024</span>
+                    <span id="setup-party-count">ประมวลผล 20 พรรคการเมือง</span>
+                </div>
+            </div>
+
+            <div id="setup-content" class="flex-1">
+                <div id="step-1" class="fade-in space-y-8 text-black">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+                        <div>
+                            <h2 class="serif text-4xl font-bold mb-4 italic text-black font-sans">"บุคคลสำคัญ" ก้าวสู่สภา</h2>
+                            <p class="text-lg leading-relaxed mb-6 font-sans text-black">พรรคร่วมรัฐบาลและฝ่ายค้านพร้อมประจัญบานในการโหวตจัดตั้งรัฐบาลครั้งประวัติศาสตร์ ท่านคือความหวังหรือความเสี่ยงครั้งใหม่?</p>
+                            <label class="block font-bold mb-2 uppercase text-xs tracking-widest opacity-60 text-black">ชื่อ-นามสกุล ของท่าน:</label>
+                            <input type="text" id="p-name" class="w-full bg-transparent border-b-2 border-black text-3xl serif focus:outline-none py-2 text-black font-sans" placeholder="ระบุชื่อเพื่อบันทึกประวัติศาสตร์...">
+                        </div>
+                        <div class="bg-stone-300 border-2 border-black flex items-center justify-center italic text-stone-500 font-bold text-black">[ Portrait ]</div>
+                    </div>
+                </div>
+                <div id="step-2" class="hidden fade-in space-y-6"><h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black font-sans">ประสบการณ์และภูมิหลัง</h2><div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-black" id="background-list"></div></div>
+                <div id="step-3" class="hidden fade-in space-y-6 text-black"><h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black text-center font-sans">เลือกพรรคที่ต้องการสังกัด</h2><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto p-2 scroll-custom text-black font-sans" id="party-list-setup"></div></div>
+                <div id="step-4" class="hidden fade-in space-y-6 text-black"><h2 class="serif text-3xl font-bold border-b border-black/10 pb-2 text-black font-sans text-black text-center font-sans">ตำแหน่งเป้าหมาย</h2><div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-black" id="position-list"></div></div>
+            </div>
+
+            <div class="mt-8 flex justify-between items-center border-t-4 border-black pt-4 text-black">
+                <button onclick="setup.prev()" id="btn-prev" class="invisible font-bold text-lg hover:text-red-600 transition text-black">← ย้อนกลับ</button>
+                <div class="flex gap-4" id="setup-dots"><span class="w-2 h-2 rounded-full bg-black"></span><span class="w-2 h-2 rounded-full bg-gray-300"></span><span class="w-2 h-2 rounded-full bg-gray-300"></span><span class="w-2 h-2 rounded-full bg-gray-300"></span></div>
+                <button onclick="setup.next()" id="btn-next" class="font-bold text-lg hover:text-red-600 transition text-black">ถัดไป →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <header class="bg-[#1a1c23] text-white p-3 flex justify-between items-center border-b border-zinc-800 shadow-xl z-[100]">
+        <div class="flex items-center gap-6">
+            <h1 class="serif font-bold text-xl text-red-500 tracking-tighter">สมการเมือง <span class="text-[10px] bg-red-900/30 px-1 text-red-400 font-mono">v10.5 ACTIVE OPP.</span></h1>
+            <div class="h-8 w-[1px] bg-zinc-700"></div>
+            <div id="hud-date" class="font-mono text-sm font-bold text-yellow-500 w-28 text-center">1 ม.ค. 2024</div>
+            <div class="flex bg-black/40 rounded p-1 border border-zinc-800">
+                <button onclick="gameClock.toggle()" id="play-pause-btn" class="w-6 h-6 flex items-center justify-center hover:text-red-500"><i class="fas fa-play text-xs text-white"></i></button>
+                <button onclick="gameClock.setSpeed(1)" class="w-6 h-6 flex items-center justify-center hover:text-red-500 text-[10px]">1x</button>
+                <button onclick="gameClock.setSpeed(3)" class="w-6 h-6 flex items-center justify-center hover:text-red-500 text-[10px]">3x</button>
+            </div>
+        </div>
+        <div class="flex gap-6 font-mono text-white text-xs items-center">
+            <div class="text-right border-l border-zinc-800 pl-6">
+                <div class="opacity-50 text-[10px]">เงินส่วนตัว (Cash)</div>
+                <div id="hud-personal-top" class="font-bold text-emerald-400">฿150M</div>
+            </div>
+            <div class="text-right border-l border-zinc-800 pl-6">
+                <div class="opacity-50 text-[10px]">งบประมาณชาติ</div>
+                <div id="hud-budget" class="font-bold text-blue-400">฿3.40T</div>
+            </div>
+            <div class="text-right border-l border-zinc-800 pl-6">
+                <div class="opacity-50 text-[10px]">เสถียรภาพ ครม.</div>
+                <div id="stat-cabinet-stability-hud" class="font-bold text-blue-400">80%</div>
+            </div>
+            <div class="text-right border-l border-zinc-800 pl-6">
+                <div class="opacity-50 text-[10px]">ความนิยมรวม</div>
+                <div class="flex items-center gap-2">
+                    <div class="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden"><div id="hud-approval-bar" class="h-full bg-yellow-500 progress-fill" style="width: 50%"></div></div>
+                    <span id="hud-approval-text" class="font-bold text-yellow-500">50%</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div id="main-game" class="hidden flex-1 flex overflow-hidden text-white">
+        <!-- NARROW SIDEBAR -->
+        <nav class="w-20 bg-[#12141a] border-r border-zinc-800 flex flex-col items-center py-4 space-y-4 z-10 shadow-2xl">
+            <button onclick="ui.tab('dashboard')" class="sidebar-item tab-btn tab-active w-full p-4 flex flex-col items-center gap-1 transition-all relative">
+                <i class="fas fa-newspaper text-lg"></i>
+                <span class="text-[8px] uppercase tracking-tighter opacity-60 font-sans text-white">หน้าแรก</span>
+                <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs">แดชบอร์ดข่าว</div>
+            </button>
+            <button onclick="ui.tab('cabinet')" class="sidebar-item tab-btn w-full p-4 flex flex-col items-center gap-1 text-zinc-400 hover:bg-zinc-800 transition-all relative">
+                <i class="fas fa-id-card text-lg"></i>
+                <span class="text-[8px] uppercase tracking-tighter opacity-60 font-sans">ครม.</span>
+                <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs">คณะรัฐมนตรี</div>
+            </button>
+            <button onclick="ui.tab('policies')" class="sidebar-item tab-btn w-full p-4 flex flex-col items-center gap-1 text-zinc-400 hover:bg-zinc-800 transition-all relative">
+                <i class="fas fa-scroll text-lg"></i>
+                <span class="text-[8px] uppercase tracking-tighter opacity-60 font-sans">นโยบาย</span>
+                <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs">นโยบายแผ่นดิน</div>
+            </button>
+            <button onclick="ui.tab('party-hq')" class="sidebar-item tab-btn w-full p-4 flex flex-col items-center gap-1 text-zinc-400 hover:bg-zinc-800 transition-all relative">
+                <i class="fas fa-users-gear text-lg"></i>
+                <span class="text-[8px] uppercase tracking-tighter opacity-60 font-sans">พรรค</span>
+                <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs">ศูนย์บัญชาการพรรค</div>
+            </button>
+            <button onclick="ui.tab('parliament')" class="sidebar-item tab-btn w-full p-4 flex flex-col items-center gap-1 text-zinc-400 hover:bg-zinc-800 transition-all relative">
+                <i class="fas fa-landmark text-lg"></i>
+                <span class="text-[8px] uppercase tracking-tighter opacity-60 font-sans">สภา</span>
+                <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs">รัฐสภา & พรรค</div>
+            </button>
+            <button onclick="ui.tab('factions')" class="sidebar-item tab-btn w-full p-4 flex flex-col items-center gap-1 text-zinc-400 hover:bg-zinc-800 transition-all relative">
+                <i class="fas fa-users text-lg"></i>
+                <span class="text-[8px] uppercase tracking-tighter opacity-60 font-sans">กลุ่ม</span>
+                <div class="tooltip bg-zinc-800 text-white px-2 py-1 rounded text-xs font-sans">กลุ่มอำนาจประชากร</div>
+            </button>
+            
+            <div class="mt-auto flex flex-col items-center space-y-4 pb-4 font-sans text-white text-center">
+                <div class="flex flex-col items-center gap-1">
+                    <i class="fas fa-chart-line text-blue-400 text-sm"></i>
+                    <span id="stat-growth-sidebar" class="text-[8px] font-bold font-mono">+2.4%</span>
+                </div>
+            </div>
+        </nav>
+
+        <main class="flex-1 bg-[#0b0c10] overflow-y-auto p-6 scroll-custom relative font-sans text-white">
+            <!-- Dashboard -->
+            <div id="tab-dashboard" class="space-y-6">
+                <div class="bg-white text-black p-8 rounded border-l-[12px] border-red-600 shadow-2xl relative font-sans">
+                    <h1 id="news-headline" class="serif text-5xl font-bold mb-4 leading-tight">...</h1>
+                    <p id="news-body" class="text-gray-600 text-xl font-medium leading-relaxed max-w-3xl font-sans">...</p>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 font-sans">
+                    <div class="bg-[#1a1c23] p-5 rounded border border-zinc-800 shadow-lg font-sans">
+                        <h3 class="font-bold text-zinc-400 mb-4 text-xs uppercase border-b border-zinc-800 pb-2 font-sans tracking-widest text-white">Live News Ticker</h3>
+                        <div id="news-feed" class="space-y-4 max-h-[350px] overflow-y-auto pr-2 scroll-custom text-white text-xs font-sans"></div>
+                    </div>
+                    <div class="bg-[#1a1c23] p-5 rounded border border-zinc-800 shadow-lg text-white font-sans">
+                        <h3 class="font-bold text-zinc-400 mb-4 text-xs uppercase border-b border-zinc-800 pb-2 tracking-widest text-white font-sans">ดัชนีสนับสนุนกลุ่มอำนาจ</h3>
+                        <div id="mini-faction-list" class="space-y-4 font-sans"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cabinet Tab -->
+            <div id="tab-cabinet" class="hidden space-y-8 font-sans">
+                <div class="flex justify-between items-end font-sans">
+                    <h2 class="serif text-4xl font-bold text-white font-sans">การจัดทัพคณะรัฐมนตรี</h2>
+                    <div id="stat-cabinet-stability-display" class="text-blue-400 font-bold text-sm bg-blue-900/20 px-3 py-1 rounded font-sans">เสถียรภาพ ครม: 80%</div>
+                </div>
+                <div id="cabinet-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-sans text-white"></div>
+            </div>
+
+            <!-- Policy Tab -->
+            <div id="tab-policies" class="hidden space-y-8 font-sans">
+                <h2 class="serif text-4xl font-bold font-sans text-white">นโยบายแผ่นดิน</h2>
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 font-sans">
+                    <div class="lg:col-span-4 space-y-3 font-sans">
+                        <h3 class="text-[10px] font-bold text-zinc-500 uppercase px-1 font-sans tracking-widest text-white">เลือกกระทรวง</h3>
+                        <div id="ministry-list" class="grid grid-cols-1 gap-2 max-h-[600px] overflow-y-auto scroll-custom pr-2"></div>
+                    </div>
+                    <div class="lg:col-span-8 space-y-6 text-white font-sans">
+                        <h3 class="text-[10px] font-bold text-zinc-500 uppercase px-1 font-sans tracking-widest">วาระสภาพลัง Real-time</h3>
+                        <div id="active-policy-list" class="space-y-6"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Party HQ Tab -->
+            <div id="tab-party-hq" class="hidden space-y-8 font-sans">
+                <div class="mb-2">
+                    <h2 class="serif text-4xl font-bold font-sans">ศูนย์บัญชาการพรรค (HQ)</h2>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 font-sans">
+                    <div class="bg-[#1a1c23] p-6 rounded-2xl border border-zinc-800 shadow-xl font-sans">
+                        <h3 class="font-bold text-zinc-400 mb-6 text-xs uppercase tracking-widest border-b border-zinc-800 pb-2">อัตลักษณ์พรรคปัจจุบัน</h3>
+                        <div class="space-y-6 font-sans text-white">
+                            <div>
+                                <div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">อุดมการณ์พรรค (Ideology)</div>
+                                <div id="my-party-ideologies" class="flex flex-wrap gap-2 mb-4 font-sans text-black"></div>
+                                <button onclick="ui.showPartyAdjustModal('ideology')" class="text-[10px] bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded text-zinc-300 font-bold border border-zinc-700 transition">ปรับเปลี่ยนอุดมการณ์ (฿50M)</button>
+                            </div>
+                            <div>
+                                <div class="text-[10px] text-zinc-500 uppercase font-bold mb-2">เป้าหมายสูงสุด (Goals)</div>
+                                <div id="my-party-goals" class="flex flex-wrap gap-2 mb-4 text-black"></div>
+                                <button onclick="ui.showPartyAdjustModal('goal')" class="text-[10px] bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded text-zinc-300 font-bold border border-zinc-700 transition">ปรับเปลี่ยนเป้าหมาย (฿50M)</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-[#1a1c23] p-6 rounded-2xl border border-zinc-800 shadow-xl font-sans">
+                        <h3 class="font-bold text-zinc-400 mb-6 text-xs uppercase tracking-widest border-b border-zinc-800 pb-2">ระบบวินัยพรรค (Whip System)</h3>
+                        <div class="space-y-4 font-sans text-white">
+                            <div class="bg-black/30 p-4 rounded-xl border border-zinc-800 flex justify-between items-center font-sans">
+                                <div>
+                                    <div class="font-bold text-sm text-white font-sans">Lobbying ภายในพรรค</div>
+                                    <div class="text-[10px] text-zinc-500 font-sans">จัดเลี้ยง สส. ในพรรคเพื่อเพิ่ม Loyalty</div>
+                                </div>
+                                <button onclick="engine.partyWhip()" class="bg-emerald-900/50 hover:bg-emerald-700 text-emerald-400 px-4 py-2 rounded-xl text-xs font-bold border border-emerald-900 font-sans transition">ดีล สส. (฿30M)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parliament -->
+            <div id="tab-parliament" class="hidden space-y-8 font-sans">
+                <div class="bg-[#1a1c23] p-8 rounded-xl border border-zinc-800 shadow-2xl font-sans">
+                    <h3 class="serif text-3xl font-bold mb-6 text-white font-sans"><i class="fas fa-landmark text-red-600"></i> โครงสร้างรัฐสภา</h3>
+                    <div id="parliament-chart" class="flex flex-wrap gap-[2px] p-6 bg-black/40 rounded-xl border border-zinc-800 min-h-[180px] justify-center mb-8 font-sans"></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 font-sans">
+                        <div class="lg:col-span-2 overflow-x-auto font-sans">
+                             <table class="w-full text-[10px] text-left font-sans">
+                                <thead class="text-zinc-500 uppercase bg-black/40 tracking-widest font-sans">
+                                    <tr>
+                                        <th class="p-3">พรรคการเมือง</th>
+                                        <th class="p-3 text-center">สถานะ</th>
+                                        <th class="p-3 text-center">ที่นั่ง</th>
+                                        <th class="p-3">อุดมการณ์</th>
+                                        <th class="p-3">เป้าหมายหลัก</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="party-stat-table" class="divide-y divide-zinc-800 font-sans text-white font-sans"></tbody>
+                             </table>
+                        </div>
+                        <div class="bg-black/30 p-5 rounded-xl border border-zinc-800 text-center font-sans">
+                             <h4 class="font-bold text-zinc-400 mb-4 text-xs uppercase tracking-widest font-sans">สรุปเสียงสภา</h4>
+                             <div class="space-y-4 font-sans text-white font-sans" id="vote-summary-parliament"></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="ai-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 font-sans text-black"></div>
+            </div>
+
+            <!-- Factions -->
+            <div id="tab-factions" class="hidden font-sans text-white">
+                <div id="faction-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 text-white"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL -->
+    <div id="event-modal" class="fixed inset-0 z-[300] bg-black/95 hidden flex items-center justify-center p-4">
+        <div class="bg-[#1a1c23] border border-zinc-700 max-w-2xl w-full p-8 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh] font-sans">
+            <h2 id="event-title" class="serif text-4xl font-bold text-red-500 mb-6 border-b border-zinc-800 pb-4 text-center font-sans text-white">...</h2>
+            <div id="voting-display" class="hidden mb-8 space-y-8 font-sans">
+                <div class="bg-black/50 p-8 rounded-2xl border border-zinc-800 text-center font-mono font-sans text-white">
+                    <div class="grid grid-cols-2 gap-8 text-white font-sans">
+                        <div><div class="text-emerald-500 text-xs font-bold mb-2 uppercase font-sans tracking-widest text-white font-sans">YES / NO-CONFIDENCE</div><div id="vote-count-yes" class="text-6xl font-black text-emerald-500">0</div></div>
+                        <div><div class="text-red-500 text-xs font-bold mb-2 uppercase font-sans tracking-widest text-white font-sans">NO / CONFIDENCE</div><div id="vote-count-no" class="text-6xl font-black text-red-500">0</div></div>
+                    </div>
+                </div>
+            </div>
+            <div id="stakeholder-reactions" class="hidden mb-8 grid grid-cols-1 gap-4 font-sans text-white"></div>
+            <div id="event-desc" class="text-zinc-300 text-lg leading-relaxed mb-8 text-center font-sans text-white font-sans">...</div>
+            <div id="event-options" class="grid grid-cols-1 gap-3 font-sans text-white font-bold font-sans text-white"></div>
+        </div>
+    </div>
+
+    <!-- JS Module Link -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
