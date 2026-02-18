@@ -17,7 +17,7 @@ export const ui = {
     },
     updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); if(!document.getElementById('tab-mps').classList.contains('hidden')) this.renderMPList(); },
     
-    // --- Helper: สร้างไอคอนพร้อม Tooltip (ใช้ได้ทั้งหน้ารายชื่อและหน้าแต่งตั้ง) ---
+    // --- Helper: สร้างไอคอนพร้อม Tooltip ---
     createIcon(iconClass, colorClass, title, subtitle = "") {
         return `
             <div class="group relative inline-flex items-center justify-center w-8 h-8 bg-zinc-800 rounded-full border border-zinc-700 hover:bg-zinc-700 cursor-help transition">
@@ -53,10 +53,13 @@ export const ui = {
         filtered.slice(0, 100).forEach(l => { 
             const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
             
-            const ideologyIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', l.trait.ideology);
-            const goalIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', l.trait.goal);
-            const abilityIcon = this.createIcon(l.trait.ability.icon, 'text-orange-400', l.trait.ability.name, l.trait.ability.desc);
-            const socioIcon = this.createIcon(l.trait.socio.icon, 'text-emerald-400', l.trait.socio.name, `ความมั่งคั่ง: ฿${l.trait.socio.baseWealth}M`);
+            // เช็คว่ามีข้อมูล Trait หรือไม่ (กัน Error กรณีข้อมูลเก่า)
+            const trait = l.trait || { ideology: "ไม่ระบุ", goal: "ไม่ระบุ", ability: { icon: "fa-question", name: "-", desc: "" }, socio: { icon: "fa-user", name: "-", baseWealth: 0 } };
+            
+            const ideologyIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', trait.ideology);
+            const goalIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', trait.goal);
+            const abilityIcon = this.createIcon(trait.ability.icon, 'text-orange-400', trait.ability.name, trait.ability.desc);
+            const socioIcon = this.createIcon(trait.socio.icon, 'text-emerald-400', trait.socio.name, `ความมั่งคั่ง: ฿${trait.socio.baseWealth || 0}M`);
 
             html += `<tr class="hover:bg-zinc-800/50 transition">
                 <td class="p-3 font-bold">
@@ -92,7 +95,7 @@ export const ui = {
         cont.innerHTML = html;
     },
 
-    // --- UPGRADED: หน้าต่างเลือก ครม. แบบละเอียด (เหมือนทำเนียบ) ---
+    // --- UPGRADED: หน้าต่างเลือก ครม. แบบตาราง (แก้ไขส่วนนี้) ---
     showAppointModal(mName) {
         this.resetModalState();
         
@@ -119,15 +122,18 @@ export const ui = {
                 candidateCount++;
                 const loyaltyColor = l.loyalty > 70 ? 'text-emerald-400' : (l.loyalty < 30 ? 'text-red-500' : 'text-yellow-500');
                 
+                // กัน Error ข้อมูลเก่า
+                const trait = l.trait || { ideology: "-", goal: "-", ability: { icon: "fa-question", name: "-" } };
+
                 // สร้างไอคอนสำหรับหน้าเลือก ครม.
-                const ideologyIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', l.trait.ideology);
-                const abilityIcon = this.createIcon(l.trait.ability.icon, 'text-orange-400', l.trait.ability.name, l.trait.ability.desc);
-                const goalIcon = this.createIcon(Data.TRAIT_ICONS[l.trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', l.trait.goal);
+                const ideologyIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.ideology] || 'fa-question', 'text-blue-400', 'แนวคิดทางการเมือง', trait.ideology);
+                const abilityIcon = this.createIcon(trait.ability?.icon || 'fa-star', 'text-orange-400', trait.ability?.name || '-', trait.ability?.desc || '');
+                const goalIcon = this.createIcon(Data.TRAIT_ICONS?.[trait.goal] || 'fa-crosshairs', 'text-purple-400', 'เป้าหมายหลัก', trait.goal);
 
                 html += `<tr class="hover:bg-zinc-800/50 transition">
                     <td class="p-3 font-bold">
                         ${l.name}
-                        <div class="text-[9px] font-normal text-zinc-500">${l.trait.socio.name}</div>
+                        <div class="text-[9px] font-normal text-zinc-500">${trait.socio?.name || 'ไม่ระบุอาชีพ'}</div>
                     </td>
                     <td class="p-3">
                         <div class="flex items-center gap-2">
@@ -167,9 +173,12 @@ export const ui = {
         
         document.getElementById('event-title').innerText = `แฟ้มประวัติ: ${l.name}`;
         
-        const lobbyCost = 2000000 * l.trait.socio.costMod;
-        const cobraCost = 10000000 * l.trait.ability.costMod * l.trait.socio.costMod;
-        const switchCost = 50000000 * l.trait.ability.costMod * l.trait.socio.costMod;
+        // Safety check for traits
+        const trait = l.trait || { ideology: "-", goal: "-", ability: { icon: "fa-question", name: "-", desc: "-", costMod: 1 }, socio: { icon: "fa-user", name: "-", costMod: 1, baseWealth: 0 } };
+
+        const lobbyCost = 2000000 * trait.socio.costMod;
+        const cobraCost = 10000000 * trait.ability.costMod * trait.socio.costMod;
+        const switchCost = 50000000 * trait.ability.costMod * trait.socio.costMod;
         const isMyParty = l.party.id === state.player.party.id;
 
         document.getElementById('event-desc').innerHTML = `
@@ -180,10 +189,10 @@ export const ui = {
                     <div><span class="text-zinc-400 text-xs">ฐานเสียง:</span> <span class="ml-2">${l.status}</span></div>
                     <div><span class="text-zinc-400 text-xs">ทรัพย์สิน:</span> <span class="text-emerald-400 font-bold ml-2">฿${(l.cash/1e6).toFixed(1)}M</span></div>
                     <div class="bg-zinc-800/50 p-2 rounded mt-2 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${l.trait.socio.icon} text-emerald-400"></i></div>
+                        <div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${trait.socio.icon} text-emerald-400"></i></div>
                         <div>
-                            <div class="text-xs text-zinc-300">อาชีพ: <b>${l.trait.socio.name}</b></div>
-                            <div class="text-[10px] text-zinc-500">Wealth Factor: x${l.trait.socio.costMod}</div>
+                            <div class="text-xs text-zinc-300">อาชีพ: <b>${trait.socio.name}</b></div>
+                            <div class="text-[10px] text-zinc-500">Wealth Factor: x${trait.socio.costMod}</div>
                         </div>
                     </div>
                 </div>
@@ -192,19 +201,19 @@ export const ui = {
                     <div class="text-[10px] text-zinc-500 uppercase font-bold border-b border-zinc-800 pb-1 mb-2">คุณลักษณะพิเศษ</div>
                     
                     <div class="flex items-center gap-2 text-xs">
-                        <i class="fas ${Data.TRAIT_ICONS[l.trait.ideology]} text-blue-400 w-4 text-center"></i>
-                        <span class="text-zinc-400">แนวคิด:</span> <span class="text-white">${l.trait.ideology}</span>
+                        <i class="fas ${Data.TRAIT_ICONS?.[trait.ideology] || 'fa-circle'} text-blue-400 w-4 text-center"></i>
+                        <span class="text-zinc-400">แนวคิด:</span> <span class="text-white">${trait.ideology}</span>
                     </div>
                     <div class="flex items-center gap-2 text-xs">
-                        <i class="fas ${Data.TRAIT_ICONS[l.trait.goal]} text-purple-400 w-4 text-center"></i>
-                        <span class="text-zinc-400">เป้าหมาย:</span> <span class="text-white">${l.trait.goal}</span>
+                        <i class="fas ${Data.TRAIT_ICONS?.[trait.goal] || 'fa-circle'} text-purple-400 w-4 text-center"></i>
+                        <span class="text-zinc-400">เป้าหมาย:</span> <span class="text-white">${trait.goal}</span>
                     </div>
 
                     <div class="bg-zinc-800/50 p-2 rounded mt-2 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${l.trait.ability.icon} text-orange-400"></i></div>
+                        <div class="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><i class="fas ${trait.ability.icon} text-orange-400"></i></div>
                         <div>
-                            <div class="text-xs text-orange-300">ความสามารถ: <b>${l.trait.ability.name}</b></div>
-                            <div class="text-[10px] text-zinc-500">${l.trait.ability.desc}</div>
+                            <div class="text-xs text-orange-300">ความสามารถ: <b>${trait.ability.name}</b></div>
+                            <div class="text-[10px] text-zinc-500">${trait.ability.desc}</div>
                         </div>
                     </div>
                 </div>
