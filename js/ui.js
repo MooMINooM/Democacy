@@ -17,45 +17,74 @@ export const ui = {
     },
     updateMain() { this.updateHUD(); this.renderActivePolicies(); this.renderMiniFactions(); this.renderFactionList(); this.renderParliament(); this.renderAI(); this.renderCabinet(); this.renderMinistryList(); this.renderPartyHQ(); if(!document.getElementById('tab-dashboard').classList.contains('hidden')) this.renderTrendGraphs(); },
     
-    // --- NEW: Visual Trends (Sparklines) ---
+    // --- IMPROVED: Visual Trends (Sparklines) ---
     renderTrendGraphs() {
         const createSparkline = (id, data, color) => {
             const container = document.getElementById(id);
-            if (!container) return;
-            // Simple SVG generation
-            const max = Math.max(...data) * 1.1 || 100;
-            const min = Math.min(...data) * 0.9 || 0;
-            const width = 100; const height = 40;
+            if (!container || data.length < 2) return;
+
+            // 1. หาค่า Min/Max และ Range
+            let max = Math.max(...data);
+            let min = Math.min(...data);
+            let range = max - min;
+
+            // 2. แก้ปัญหา "กราฟเส้นตรง" (กรณีค่าเท่ากันหมด)
+            if (range === 0) {
+                // สร้างระยะหลอกๆ เพื่อให้เส้นอยู่ตรงกลาง ไม่ชิดขอบ
+                max += (max * 0.1) || 10; 
+                min -= (min * 0.1) || 10;
+                range = max - min;
+            } else {
+                // 3. เพิ่ม Padding 20% บน-ล่าง ให้กราฟดูไม่อึดอัด
+                const padding = range * 0.2;
+                max += padding;
+                min -= padding;
+                range = max - min;
+            }
+
+            const width = 100; 
+            const height = 40;
+            
+            // 4. สร้างจุดพิกัด SVG
             const points = data.map((d, i) => {
                 const x = (i / (data.length - 1)) * width;
-                const y = height - ((d - min) / (max - min)) * height;
+                // คำนวณ Y โดยกลับด้าน (SVG 0 อยู่บน) และเทียบสัดส่วน
+                const y = height - ((d - min) / range) * height;
                 return `${x},${y}`;
             }).join(" ");
-            container.innerHTML = `<svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="${color}" stroke-width="2" points="${points}"/></svg>`;
+
+            // 5. Render SVG (เพิ่ม stroke-width และจุดปลายทาง)
+            container.innerHTML = `
+                <svg width="100%" height="100%" viewBox="0 -5 100 50" preserveAspectRatio="none" style="overflow: visible;">
+                    <defs>
+                        <linearGradient id="grad-${id}" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" style="stop-color:${color};stop-opacity:0.3" />
+                            <stop offset="100%" style="stop-color:${color};stop-opacity:0" />
+                        </linearGradient>
+                    </defs>
+                    <polygon points="0,${height} ${points} 100,${height}" fill="url(#grad-${id})" />
+                    <polyline fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${points}"/>
+                    <circle cx="100" cy="${height - ((data[data.length-1] - min) / range) * height}" r="3" fill="${color}" stroke="#1a1c23" stroke-width="1.5" />
+                </svg>`;
         };
-        // Inject containers if not exists
-        if (!document.getElementById('trend-approval')) {
-            const dashboard = document.getElementById('news-headline').parentElement.parentElement; 
-            // Warning: DOM manipulation depends on HTML structure. Assuming dashboard layout.
-             // We can insert this dynamically into the dashboard sidebar or main area.
-             // For safety, let's look for specific ID or append to dashboard tab
-        }
-        // Assuming we added divs with these IDs in HTML or we inject them now:
+
+        // Inject container structure if missing
         const feed = document.getElementById('news-feed');
         if (feed && !document.getElementById('trend-container')) {
             const div = document.createElement('div');
             div.id = 'trend-container';
-            div.className = "grid grid-cols-2 gap-4 mb-4 bg-[#1a1c23] p-4 rounded-xl border border-zinc-800";
+            div.className = "grid grid-cols-2 gap-4 mb-4 bg-[#1a1c23] p-4 rounded-xl border border-zinc-800 shadow-md";
             div.innerHTML = `
-                <div><div class="text-[9px] text-zinc-500 uppercase">Approval Trend</div><div id="trend-approval" class="h-10 mt-1"></div></div>
-                <div><div class="text-[9px] text-zinc-500 uppercase">Budget Trend</div><div id="trend-budget" class="h-10 mt-1"></div></div>
+                <div><div class="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-2">Approval Trend</div><div id="trend-approval" class="h-12 w-full"></div></div>
+                <div><div class="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-2">Budget Trend</div><div id="trend-budget" class="h-12 w-full"></div></div>
             `;
-            feed.parentElement.insertAdjacentElement('beforebegin', div);
+            // Insert before news feed
+            feed.parentElement.insertBefore(div, feed.parentElement.firstChild.nextSibling.nextSibling); 
         }
         
-        if (state.history.approval.length > 1) {
-            createSparkline('trend-approval', state.history.approval, '#eab308');
-            createSparkline('trend-budget', state.history.budget, '#60a5fa');
+        if (state.history && state.history.approval.length > 0) {
+            createSparkline('trend-approval', state.history.approval, '#eab308'); // Yellow
+            createSparkline('trend-budget', state.history.budget, '#60a5fa');   // Blue
         }
     },
 
