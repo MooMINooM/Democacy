@@ -140,16 +140,47 @@ export const engine = {
         ui.updateMain();
     },
 
-    // --- NEW: Individual Lobbying ---
+    // --- UPGRADED: Individual Lobbying with Loyalty Check ---
     buyCobra(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
         const cost = 10000000; // 10M per MP
+        
+        if (mp.isCobra) { alert("สส. ท่านนี้เป็นงูเห่าฝั่งเราอยู่แล้ว!"); return; }
         if (state.player.personalFunds < cost) { alert("เงินส่วนตัวไม่เพียงพอ"); return; }
         
+        // เช็คสถานะพรรคและ Loyalty
+        if (mp.party.status === "Opposition" || mp.party.status === "Neutral") {
+            // ถ้า Loyalty สูงเกิน 60 จะปฏิเสธเด็ดขาด
+            if (mp.loyalty > 60) {
+                alert(`ล้มเหลว! สส. ${mp.name} มีความภักดีต่อพรรคสูงมาก (${mp.loyalty.toFixed(0)}%) และปฏิเสธข้อเสนอทันที`);
+                return;
+            }
+            // ถ้า Loyalty 30-60 จะสุ่มโอกาสสำเร็จ
+            if (mp.loyalty >= 30) {
+                const successChance = 100 - (mp.loyalty * 1.5); // โอกาสสำเร็จลดลงตาม Loyalty
+                if (Math.random() * 100 > successChance) {
+                    state.player.personalFunds -= (cost / 2); // เสียค่าดำเนินการ 5M แม้ไม่สำเร็จ
+                    alert(`ดีลล้มเหลว! สส. ${mp.name} ตัดสินใจปฏิเสธข้อเสนอ (สูญเงินดำเนินการ ฿5M)`);
+                    ui.updateMain();
+                    return;
+                }
+            }
+        } else if (mp.party.status === "Government" && mp.party.id !== state.player.party.id) {
+            // สส. พรรคร่วมรัฐบาล
+            if (mp.loyalty > 70) {
+                alert(`ล้มเหลว! สส. ${mp.name} ภักดีต่อพรรคร่วมมากเกินไป ปฏิเสธการเป็นงูเห่า`);
+                return;
+            }
+        } else if (mp.party.id === state.player.party.id) {
+            alert("นี่คือ สส. ในพรรคของคุณเอง ใช้ระบบดีลในพรรค (Whip) ที่หน้า HQ แทนการดีลลับรายบุคคล");
+            return;
+        }
+        
+        // ดีลสำเร็จ
         state.player.personalFunds -= cost;
         mp.isCobra = true;
-        mp.loyalty = 0; // Betrays original party
-        this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} ตกลงรับข้อเสนอพิเศษ (สถานะ: งูเห่า)`);
+        mp.loyalty = 0; // ทรยศพรรคเดิมโดยสมบูรณ์
+        this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} ตกลงรับข้อเสนอพิเศษ (เปลี่ยนสถานะเป็น: งูเห่า)`);
         ui.updateMain();
     },
 
@@ -223,7 +254,6 @@ export const engine = {
         document.getElementById('event-modal').classList.remove('hidden');
     },
 
-    // --- UPGRADED: Individual Member Voting Logic ---
     runVote(pName) {
         const p = state.activePolicies.find(x => x.name === pName);
         let yes = 0, no = 0;
