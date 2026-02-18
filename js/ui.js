@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import * as Data from './data.js';
-import { gameClock } from './engine.js';
+import { gameClock, engine } from './engine.js';
 
 export const ui = {
     tab(t) { 
@@ -56,7 +56,6 @@ export const ui = {
         let h = `<div class="space-y-4">`;
         if (filtered.length === 0) h += `<div class="text-zinc-500 italic p-4 text-center">ยังไม่มีแผนนโยบาย</div>`;
         else filtered.forEach(p => {
-            // Note: Use single quotes for JSON stringify to avoid conflict
             h += `<div class="bg-black/40 p-5 rounded-2xl border border-zinc-700 text-left font-sans text-white">
                 <div class="font-bold text-red-500 text-xl serif">${p.name}</div>
                 <button onclick='engine.propose(${JSON.stringify(p)}, "รัฐบาล");' class="w-full mt-4 bg-red-700 py-3 rounded-xl font-bold shadow-lg text-white font-sans">เสนอเข้าสภา</button>
@@ -189,16 +188,32 @@ export const ui = {
             <div class="flex justify-between text-xs border-t border-zinc-800 pt-2 mt-2 text-white text-white"><span>วางเฉย:</span> <span class="text-zinc-500 font-sans">${nT}</span></div>`;
         state.leaders.forEach(l => { const dot = document.createElement('div'); dot.className = "voting-dot shadow-sm"; dot.style.backgroundColor = l.party.color; chart.appendChild(dot); });
     },
+
+    // --- UPGRADED: AI List with Lobbying Button ---
     renderAI() {
         const cont = document.getElementById('ai-list'); if(!cont) return;
         cont.innerHTML = state.leaders.slice(0, 15).map(l => {
             const tag = l.party.status === "Government" ? "govt-tag" : (l.party.status === "Opposition" ? "opp-tag" : "neu-tag");
-            return `<div class="bg-white p-3 rounded-xl border-l-4 shadow-md text-left font-sans text-black" style="border-left-color:${l.party.color}">
-                <div class="flex justify-between items-start font-sans text-black"><div class="text-xs font-bold text-black font-sans text-black">${l.name}</div> <span class="${tag} font-sans">${l.party.status}</span></div>
-                <div class="text-[9px] text-zinc-500 mt-1 font-bold font-sans text-black font-sans">${l.party.name}</div>
-                <div class="text-[8px] text-zinc-400 italic font-sans text-black font-sans">กลุ่มฐาน: ${l.status}</div></div>`;
+            const cobraClass = l.isCobra ? "text-red-500 font-bold animate-pulse" : "text-zinc-400";
+            return `<div class="bg-white p-4 rounded-xl border-l-4 shadow-md text-left font-sans text-black" style="border-left-color:${l.party.color}">
+                <div class="flex justify-between items-start font-sans">
+                    <div>
+                        <div class="text-xs font-bold text-black font-sans">${l.name}</div>
+                        <div class="text-[9px] text-zinc-500 font-bold uppercase">${l.party.name}</div>
+                    </div>
+                    <span class="${tag} font-sans">${l.party.status}</span>
+                </div>
+                <div class="mt-3 flex justify-between items-center">
+                    <div class="text-[9px] text-zinc-600">Loyalty: <span class="font-bold">${l.loyalty.toFixed(0)}%</span></div>
+                    <div class="text-[8px] ${cobraClass}">${l.isCobra ? '● สถานะ: งูเห่า' : '● สถานะ: ปกติ'}</div>
+                </div>
+                <button onclick="engine.buyCobra(${l.id})" class="mt-3 w-full py-2 bg-black hover:bg-red-700 text-white rounded-lg text-[10px] font-bold transition-all">
+                    ดีลลับส่วนตัว (฿10M)
+                </button>
+            </div>`;
         }).join("");
     },
+
     resetModalState() {
         document.getElementById('voting-display').classList.add('hidden');
         document.getElementById('stakeholder-reactions').classList.add('hidden');
