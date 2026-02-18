@@ -148,18 +148,23 @@ export const engine = {
         state.player.personalFunds -= cost;
         mp.loyalty = Math.min(100, mp.loyalty + 15);
         this.addNews(`ล็อบบี้สำเร็จ: ${mp.name}`, `ความสัมพันธ์ดีขึ้น (+15 Loyalty)`);
-        ui.updateMain();
+        
+        // --- UI FEEDBACK ---
+        ui.showFeedback('lobby', true, mp.name, () => {
+            ui.updateMain();
+            ui.showMPActionModal(mpId); 
+        });
     },
 
     forceSwitchParty(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        // Cost Formula: Base 50M * Ability Factor * Socio Factor
         const cost = 50000000 * mp.trait.ability.costMod * mp.trait.socio.costMod; 
         
-        if (mp.party.id === state.player.party.id) { alert("อยู่พรรคเดียวกันอยู่แล้ว"); return; }
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
-        
-        if (mp.trait.ideology === "อุดมการณ์สูง") { alert(`สส. คนนี้ยึดมั่นในอุดมการณ์มาก ซื้อไม่ได้`); return; }
+        if (mp.trait.ideology === "อุดมการณ์สูง") { 
+            ui.showFeedback('switch', false, mp.name, null); // ปฏิเสธทันที
+            return; 
+        }
 
         state.player.personalFunds -= cost;
         mp.party.seats--; 
@@ -170,12 +175,16 @@ export const engine = {
         
         state.world.transparency -= 15;
         this.addNews(`ดูด สส. สำเร็จ!`, `${mp.name} ย้ายขั้วมาสังกัด ${state.player.party.name} อย่างเป็นทางการ`);
-        ui.updateMain();
+        
+        // --- UI FEEDBACK ---
+        ui.showFeedback('switch', true, mp.name, () => {
+            ui.updateMain();
+            ui.showMPActionModal(mpId); 
+        });
     },
 
     buyCobra(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        // Cost Formula: Base 10M * Ability * Socio
         const cost = 10000000 * mp.trait.ability.costMod * mp.trait.socio.costMod; 
         
         if (mp.isCobra) { alert("เป็นงูเห่าอยู่แล้ว"); return; }
@@ -185,16 +194,24 @@ export const engine = {
 
         // Success Chance: Depends on Loyalty and Ideology mismatch
         const successChance = 100 - (mp.loyalty * 0.8);
-        if (Math.random() * 100 > successChance) {
+        const isSuccess = Math.random() * 100 <= successChance;
+
+        if (!isSuccess) {
              state.player.personalFunds -= (cost / 5); 
-             alert(`ดีลล้มเหลว! ${mp.name} ปฏิเสธ (สูญเงินมัดจำ)`);
+             // --- UI FEEDBACK (FAIL) ---
+             ui.showFeedback('cobra', false, mp.name, () => ui.updateMain());
              return;
         }
         
         state.player.personalFunds -= cost;
         mp.isCobra = true; mp.loyalty = 0; 
         this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} เป็นงูเห่า (Transparency -5)`);
-        ui.updateMain();
+        
+        // --- UI FEEDBACK (SUCCESS) ---
+        ui.showFeedback('cobra', true, mp.name, () => {
+            ui.updateMain();
+            ui.showMPActionModal(mpId); 
+        });
     },
 
     triggerCrisis() {
