@@ -71,6 +71,7 @@ export const engine = {
                         ability: ability,
                         socio: socio
                     },
+                    conviction: Math.floor(Math.random() * 100),
                     cash: cash
                 });
             }
@@ -110,7 +111,11 @@ export const engine = {
             if (currentGovSeats > 250) break;
             let conflict = false;
             pArr[i].ideologies.forEach(ideo => {
-                if(Data.IDEOLOGY_CONFLICTS[ideo] && Data.IDEOLOGY_CONFLICTS[ideo].some(c => pArr[0].ideologies.includes(c))) conflict = true;
+                pArr[0].ideologies.forEach(govIdeo => {
+                    const conflictsFromCandidate = Data.IDEOLOGY_CONFLICTS[ideo] || [];
+                    const conflictsFromGov = Data.IDEOLOGY_CONFLICTS[govIdeo] || [];
+                    if (conflictsFromCandidate.includes(govIdeo) || conflictsFromGov.includes(ideo)) conflict = true;
+                });
             });
             if (!conflict) { pArr[i].status = "Government"; currentGovSeats += pArr[i].seats; }
         }
@@ -161,9 +166,9 @@ export const engine = {
         const cost = 50000000 * mp.trait.ability.costMod * mp.trait.socio.costMod; 
         
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
-        if (mp.trait.ideology === "อุดมการณ์สูง") { 
-            ui.showFeedback('switch', false, mp.name, null); // ปฏิเสธทันที
-            return; 
+        if (mp.conviction > 85) {
+            ui.showFeedback('switch', false, mp.name, null); // ยึดมั่นอุดมการณ์สูง ปฏิเสธทันที
+            return;
         }
 
         state.player.personalFunds -= cost;

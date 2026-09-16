@@ -34,8 +34,9 @@ export const ui = {
         const els = { 
             'hud-date': state.date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }), 
             'hud-budget': `฿${(state.world.nationalBudget / 1e12).toFixed(2)}T`, 
-            'hud-approval-text': `${state.world.approval.toFixed(0)}%`, 
-            'hud-personal-top': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`, 
+            'hud-approval-text': `${state.world.approval.toFixed(0)}%`,
+            'hud-transparency-text': `${(state.world.transparency ?? 100).toFixed(0)}%`,
+            'hud-personal-top': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`,
             'stat-cabinet-stability-display': `${state.world.cabinetStability}%`
         };
         for (const [id, val] of Object.entries(els)) { const el = document.getElementById(id); if(el) el.innerText = val; }
@@ -430,6 +431,7 @@ export const ui = {
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Status</span><span class="font-bold">${l.status}</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Wealth</span><span class="font-bold font-mono">฿${(l.cash/1e6).toFixed(1)}M</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Loyalty</span><span class="font-bold ${l.loyalty > 50 ? 'text-green-700':'text-red-700'}">${l.loyalty.toFixed(0)}%</span></div>
+                        <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Conviction</span><span class="font-bold ${l.conviction > 85 ? 'text-red-700':'text-stone-700'}">${l.conviction}%${l.conviction > 85 ? ' (ย้ายพรรคไม่ได้)' : ''}</span></div>
                     </div>
                 </div>
                 <div class="lg:col-span-8 flex flex-col">
@@ -455,13 +457,20 @@ export const ui = {
     },
 
     showFeedback(t, s, n, cb) {
-        // Reuse the logic from previous turn or keep simple alert for consistency if requested "neatness" implies less flashy animation here, 
-        // BUT the user liked the "Stamp", so let's keep the Stamp logic if present in modal. 
-        // For brevity in this "Neat" version, I'll use a clean modal overlay or simply callback to update.
-        // Assuming "Stamp" logic is desired:
-        if(cb) cb();
-        // (Full stamp animation code is quite long, assuming user has it from previous turn or wants layout focus here).
-        // Let's stick to the prompt's request: "Layout adjustment... except MP roster".
+        const labels = { lobby: "ล็อบบี้", switch: "ดูด สส.", cobra: "ดีลลับ (งูเห่า)" };
+        const label = labels[t] || t;
+        const container = document.getElementById('toast-container');
+        if (container) {
+            const el = document.createElement('div');
+            el.className = `w-72 px-4 py-3 border-2 border-black font-sans shadow-[4px_4px_0_#000] transition-opacity duration-500 ${s ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900'}`;
+            el.innerHTML = `
+                <div class="text-[9px] font-bold uppercase tracking-widest opacity-70 mb-1">${label}</div>
+                <div class="font-bold text-sm">${n}: ${s ? 'สำเร็จ' : 'ล้มเหลว'}</div>
+            `;
+            container.appendChild(el);
+            setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 2200);
+        }
+        if (cb) cb();
     },
     
     // ... Keeping other specific modal logic (Vote Interface etc) consistent with style ...
