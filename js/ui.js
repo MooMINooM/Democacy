@@ -387,6 +387,11 @@ export const ui = {
                 </div>
             </div>
 
+            <div class="flex items-center gap-1 text-[9px] text-stone-500 mb-2 truncate" title="${trait.ideology} / ${trait.goal}">
+                <i class="fas ${Data.TRAIT_ICONS[trait.ideology] || 'fa-question'}"></i>
+                <span class="truncate">${trait.ideology}</span>
+            </div>
+
             <div class="mt-auto space-y-2">
                 <div class="flex justify-between items-center text-[9px] text-stone-500 font-bold uppercase tracking-wider">
                     <span>Loyalty</span>
@@ -432,6 +437,8 @@ export const ui = {
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Wealth</span><span class="font-bold font-mono">฿${(l.cash/1e6).toFixed(1)}M</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Loyalty</span><span class="font-bold ${l.loyalty > 50 ? 'text-green-700':'text-red-700'}">${l.loyalty.toFixed(0)}%</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Conviction</span><span class="font-bold ${l.conviction > 85 ? 'text-red-700':'text-stone-700'}">${l.conviction}%${l.conviction > 85 ? ' (ย้ายพรรคไม่ได้)' : ''}</span></div>
+                        <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Ideology</span><span class="font-bold">${l.trait.ideology}</span></div>
+                        <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Goal</span><span class="font-bold">${l.trait.goal}</span></div>
                     </div>
                 </div>
                 <div class="lg:col-span-8 flex flex-col">
@@ -474,7 +481,18 @@ export const ui = {
     },
     
     // ... Keeping other specific modal logic (Vote Interface etc) consistent with style ...
-    showVoteInterface(pName) { const p = state.activePolicies.find(x => x.name === pName); gameClock.setSpeed(0); this.resetModalState(); document.getElementById('event-title').innerText = `Parliament Vote`; document.getElementById('event-desc').innerHTML = `<div class="text-center font-serif text-2xl font-bold border-y-2 border-black py-4 my-4">${p.name}</div>`; document.getElementById('voting-display').classList.remove('hidden'); document.getElementById('event-options').innerHTML = `<button onclick="window.engine.runVote('${p.name}')" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:bg-stone-800">Start Voting</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
+    showVoteInterface(pName) { const p = state.activePolicies.find(x => x.name === pName); gameClock.setSpeed(0); this.resetModalState(); document.getElementById('event-title').innerText = `Parliament Vote`; document.getElementById('event-desc').innerHTML = `<div class="text-center font-serif text-2xl font-bold border-y-2 border-black py-4 my-4">${p.name}</div><div class="text-center text-xs uppercase tracking-widest text-stone-500">แนวคิด: ${p.ideology} · เป้าหมาย: ${p.goal} · กลุ่มเป้าหมาย: ${p.target}</div>`; document.getElementById('voting-display').classList.remove('hidden'); document.getElementById('event-options').innerHTML = `<button onclick="window.engine.runVote('${p.name}')" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:bg-stone-800">Start Voting</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
+
+    displayResults(p, yes, no) {
+        document.getElementById('vote-count-yes').innerText = yes;
+        document.getElementById('vote-count-no').innerText = no;
+        const passed = yes > no;
+        document.getElementById('event-desc').innerHTML = `
+            <div class="text-center font-serif text-2xl font-bold border-y-2 border-black py-4 my-4">${p.name}</div>
+            <div class="text-center text-lg font-black uppercase tracking-widest ${passed ? 'text-emerald-700' : 'text-red-700'}">${passed ? 'มติผ่าน' : 'มติไม่ผ่าน'}</div>
+        `;
+        document.getElementById('event-options').innerHTML = `<button onclick="window.engine.finalizeVote('${p.name}', ${passed})" class="w-full p-4 ${passed ? 'bg-black' : 'bg-red-700'} text-white font-bold border-2 border-black text-lg hover:opacity-90">รับทราบผล</button>`;
+    },
     showQuidProQuo(p, demand, party) { this.resetModalState(); document.getElementById('event-title').innerText = `Backroom Deal`; document.getElementById('event-desc').innerHTML = `<div class="border-l-4 border-black pl-4 my-4"><div class="font-bold text-sm uppercase text-stone-500">Proposal from ${party.name}</div><div class="font-serif text-lg italic">"We will support ${p.name} if you approve this:"</div><div class="mt-2 font-bold bg-stone-100 p-2 border border-black">${demand.name}</div></div>`; document.getElementById('event-options').innerHTML = `<div class="grid grid-cols-2 gap-4"><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", true)' class="p-3 bg-black text-white font-bold uppercase hover:opacity-80">Accept</button><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", false)' class="p-3 border-2 border-black font-bold uppercase hover:bg-stone-100">Reject</button></div>`; document.getElementById('event-modal').classList.remove('hidden'); },
     showStakeholderReview(p, stakeholders, proposer) { this.resetModalState(); document.getElementById('event-title').innerText = `Policy Review`; document.getElementById('stakeholder-reactions').classList.remove('hidden'); let h = ""; stakeholders.forEach(s => { h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${p.impact[s.name]>0?'text-green-700':'text-red-700'}">${p.impact[s.name]>0?'+':''}${p.impact[s.name]}</span></div>`; }); document.getElementById('stakeholder-reactions').innerHTML = h; document.getElementById('event-desc').innerText = `Submit ${p.name} to Parliament?`; document.getElementById('event-options').innerHTML = `<button onclick="engine.confirmProposal('${p.name}', '${proposer}')" class="w-full p-3 bg-black text-white font-bold uppercase border-2 border-black">Confirm</button><button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 border-2 border-black font-bold uppercase hover:bg-stone-100 mt-2">Cancel</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
     showPolicyBank(mName) { this.resetModalState(); const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName); let h = `<div class="grid grid-cols-1 gap-2">`; if (filtered.length === 0) h += `<div class="italic text-stone-400 text-center">No drafts available</div>`; else filtered.forEach(p => { h += `<div class="border border-black p-3 hover:bg-stone-50 transition flex justify-between items-center"><div><div class="font-bold text-sm">${p.name}</div><div class="text-[10px] font-mono">฿${(p.cost/1e9).toFixed(1)}B</div></div><button onclick="engine.propose('${p.name}', 'รัฐบาล')" class="bg-black text-white text-[9px] font-bold px-3 py-1 uppercase">Draft</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `Drafts: ${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`; document.getElementById('event-modal').classList.remove('hidden'); },

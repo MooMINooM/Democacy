@@ -2,6 +2,13 @@ import { state } from './state.js';
 import * as Data from './data.js';
 import { ui } from './ui.js';
 
+function ideologiesConflict(a, b) {
+    if (!a || !b) return false;
+    const fromA = Data.IDEOLOGY_CONFLICTS[a] || [];
+    const fromB = Data.IDEOLOGY_CONFLICTS[b] || [];
+    return fromA.includes(b) || fromB.includes(a);
+}
+
 export const gameClock = {
     toggle() { this.setSpeed(state.speed === 0 ? 1 : 0); },
     setSpeed(s) { 
@@ -14,7 +21,8 @@ export const gameClock = {
         state.date.setDate(state.date.getDate() + 1);
         Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; });
         state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
-        
+        state.world.stabilityPenalty = Math.max(0, (state.world.stabilityPenalty || 0) - 0.5 * state.speed);
+
         if(state.date.getDate() === 15 && Math.random() < 0.1) engine.aiPropose();
         if(state.date.getDate() === 28 && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
            if(Math.random() < 0.05) engine.triggerNoConfidence();
@@ -33,9 +41,10 @@ export const gameClock = {
 
 export const engine = {
     init() {
-        state.voteModifier = null; 
-        state.world.transparency = 100; 
-        state.history = { approval: [], budget: [] }; 
+        state.voteModifier = null;
+        state.world.transparency = 100;
+        state.world.stabilityPenalty = 0;
+        state.history = { approval: [], budget: [] };
         state.lastVoteResults = null; 
         state.lastVoteLog = []; 
 
@@ -98,30 +107,26 @@ export const engine = {
                 status: "Opposition", seats: 0 
             });
         }
-        let rSeats = 500;
+        let rSeats = Data.TOTAL_SEATS;
         pArr.forEach((p) => {
             let s = p.size === "Major" ? 35 + Math.random()*25 : (p.size === "Medium" ? 15 + Math.random()*15 : 2 + Math.random()*8);
             p.seats = Math.floor(s); rSeats -= p.seats;
         });
         pArr[0].seats += rSeats;
-        
+
         pArr[0].status = "Government";
         let currentGovSeats = pArr[0].seats;
         for(let i=1; i<pArr.length; i++) {
-            if (currentGovSeats > 250) break;
+            if (currentGovSeats > Data.MAJORITY_SEATS) break;
             let conflict = false;
             pArr[i].ideologies.forEach(ideo => {
-                pArr[0].ideologies.forEach(govIdeo => {
-                    const conflictsFromCandidate = Data.IDEOLOGY_CONFLICTS[ideo] || [];
-                    const conflictsFromGov = Data.IDEOLOGY_CONFLICTS[govIdeo] || [];
-                    if (conflictsFromCandidate.includes(govIdeo) || conflictsFromGov.includes(ideo)) conflict = true;
-                });
+                pArr[0].ideologies.forEach(govIdeo => { if (ideologiesConflict(ideo, govIdeo)) conflict = true; });
             });
             if (!conflict) { pArr[i].status = "Government"; currentGovSeats += pArr[i].seats; }
         }
-        if (currentGovSeats <= 250) {
+        if (currentGovSeats <= Data.MAJORITY_SEATS) {
             for(let i=1; i<pArr.length; i++) {
-                if (currentGovSeats > 250) break;
+                if (currentGovSeats > Data.MAJORITY_SEATS) break;
                 if (pArr[i].status !== "Government") { pArr[i].status = "Government"; currentGovSeats += pArr[i].seats; }
             }
         }
@@ -142,8 +147,12 @@ export const engine = {
         const govSeats = state.parties.filter(p => p.status === "Government").reduce((s, p) => s + p.seats, 0);
         let factionScore = 0; let minCount = 0;
         Object.values(Data.MINISTRIES).forEach(m => { if(m.currentMinister) { const f = state.factions.find(fx => fx.name === m.currentMinister.status); if(f) factionScore += f.approval; minCount++; } });
-        state.world.cabinetStability = Math.floor((govSeats / 500 * 50) + (minCount > 0 ? (factionScore / minCount) * 0.5 : 25));
+        state.world.cabinetStability = Math.max(0, Math.floor((govSeats / Data.TOTAL_SEATS * 50) + (minCount > 0 ? (factionScore / minCount) * 0.5 : 25) - (state.world.stabilityPenalty || 0)));
         state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
+
+        const positionIncome = { "นายกรัฐมนตรี": 20000000, "หัวหน้าพรรค": 12000000, "สส. เขต": 6000000 }[state.player.position] || 6000000;
+        state.player.personalFunds += positionIncome;
+        this.addNews("รายรับประจำเดือน", `ท่านได้รับเงินเดือนและผลตอบแทนตำแหน่ง ฿${(positionIncome/1e6).toFixed(0)}M`);
     },
     
     lobbyIndividual(mpId) {
@@ -225,7 +234,8 @@ export const engine = {
             state.world.growth -= 2.5;
             this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง");
         } else {
-            state.world.cabinetStability -= 15;
+            state.world.stabilityPenalty = Math.min(50, (state.world.stabilityPenalty || 0) + 15);
+            state.world.cabinetStability = Math.max(0, state.world.cabinetStability - 15);
             this.addNews("ม็อบลงถนนขับไล่รัฐบาล!", "ประชาชนชุมนุมใหญ่ เรียกร้องให้ยุบสภา");
         }
         ui.updateMain();
@@ -324,7 +334,7 @@ export const engine = {
             else { if (score < 50) yes++; else no++; }
         });
         document.getElementById('vote-count-yes').innerText = yes; document.getElementById('vote-count-no').innerText = no;
-        const ousted = yes > 250;
+        const ousted = yes > Data.MAJORITY_SEATS;
         document.getElementById('event-options').innerHTML = ousted ? `<button onclick="location.reload()" class="w-full p-4 bg-black rounded-xl text-white font-sans">จบเกม</button>` : `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-4 bg-zinc-700 rounded-xl text-white font-sans">บริหารต่อ</button>`;
     },
 
@@ -374,11 +384,15 @@ export const engine = {
         state.leaders.forEach(mp => {
             let score = state.factions.find(fx => fx.name === mp.status)?.approval || 50;
             if (mp.party.ideologies.includes(p.ideology)) score += 35;
-            score += (p.coalitionBoost || 0); 
+            const personalMatch = mp.trait.ideology === p.ideology;
+            const personalConflict = ideologiesConflict(mp.trait.ideology, p.ideology);
+            if (personalMatch) score += 20;
+            if (personalConflict) score -= 25;
+            score += (p.coalitionBoost || 0);
             if (state.voteModifier && mp.party.id === state.voteModifier.partyId) {
-                if (state.voteModifier.type === 'support') score += 100; if (state.voteModifier.type === 'rebel') score -= 100; 
+                if (state.voteModifier.type === 'support') score += 100; if (state.voteModifier.type === 'rebel') score -= 100;
             }
-            let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra;
+            let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra || (personalConflict && Math.random() < 0.25);
             if (mp.isCobra) { if(mp.party.status === "Government") voteAgainstParty = false; if(mp.party.status === "Opposition") voteAgainstParty = true; }
 
             let finalVote = "abstain";

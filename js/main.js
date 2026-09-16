@@ -50,10 +50,10 @@ const setup = {
             document.getElementById('main-game').classList.remove('hidden'); 
             
             // Initialize Engine and UI
-            engine.init(); 
-            ui.updateMain(); 
-            gameClock.setSpeed(1); // Auto start
-            return; 
+            engine.init();
+            ui.updateMain();
+            gameClock.setSpeed(0); // Start paused so the player can read the situation first
+            return;
         }
         
         // Navigation Logic

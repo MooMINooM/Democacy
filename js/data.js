@@ -1,3 +1,6 @@
+export const TOTAL_SEATS = 500;
+export const MAJORITY_SEATS = 250;
+
 export const FACTION_DATA = [
     { name: "กองทัพ", weight: 80, wealth: 70, basePop: 300000, icon: "fa-shield-halved" },
     { name: "หัวก้าวหน้า", weight: 60, wealth: 30, basePop: 5000000, icon: "fa-bolt" },
