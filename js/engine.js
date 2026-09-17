@@ -9,6 +9,37 @@ import { ui } from './ui.js';
 // (finalizeVote's own budget spend, processQuidProQuo) are not gated here: those represent
 // whichever coalition currently governs carrying out a bill that already passed, not the player
 // personally reaching into the treasury.
+// AI Cabinet (Phase 7 follow-up): appointMinister() is now player-only and gated to Government
+// status (requireGovernment below), which left every ministry vacant for as long as the player
+// stayed in opposition -- whichever coalition actually holds government still needs a working
+// cabinet. Reuses the ministry<->goal link POLICY_TEMPLATES already encodes (the same field
+// getImplementationEffectiveness() reads for minister fit) instead of adding a new mapping, and
+// scores candidates on the same ambition/prestige traits the player already weighs in
+// showAppointModal. Only ever runs when the player's own party isn't the one appointing --
+// see the two call sites in runElection()/runNoConfidenceVote().
+function autoAppointCabinet() {
+    const govParties = new Set(state.parties.filter(p => p.status === "Government").map(p => p.id));
+    const pool = state.leaders.filter(l => govParties.has(l.party.id));
+    const taken = new Set();
+    const appointed = [];
+    Object.entries(Data.MINISTRIES).forEach(([mName, ministry]) => {
+        const primaryGoal = Data.POLICY_TEMPLATES.find(t => t.ministry === mName)?.goal;
+        const candidates = pool.filter(l => !taken.has(l.id));
+        if (candidates.length === 0) return;
+        const scored = candidates.map(l => ({
+            l, score: (l.trait.goal === primaryGoal ? 40 : 0) + (l.ambition ?? 50) * 0.3 + (l.prestige ?? 50) * 0.3
+        })).sort((a, b) => b.score - a.score);
+        const pick = scored[0].l;
+        ministry.currentMinister = pick;
+        taken.add(pick.id);
+        const boost = 10 + (pick.ambition ?? 50) * 0.3;
+        pick.loyalty = Math.min(100, pick.loyalty + boost);
+        pick.trust = Math.min(100, pick.trust + boost * 0.5);
+        appointed.push(pick.party.name);
+    });
+    return appointed;
+}
+
 function requireGovernment(actionLabel) {
     if (state.player.party.status !== "Government") {
         alert(`เฉพาะพรรครัฐบาลเท่านั้นที่${actionLabel}ได้ ตอนนี้พรรคท่านเป็น${state.player.party.status === "Opposition" ? "ฝ่ายค้าน" : "กลาง"} ลองสร้างฐานเสียงผ่านการลงพื้นที่หาเสียงแทน`);
@@ -1050,6 +1081,12 @@ export const engine = {
         this.generateLeaders();
 
         const won = state.player.party.status === "Government";
+        // AI Cabinet: the player can only appoint through showAppointModal while their own party
+        // governs -- whichever coalition won instead fills its own cabinet automatically.
+        if (!won) {
+            const appointed = autoAppointCabinet();
+            if (appointed.length > 0) this.addNews("จัดตั้งคณะรัฐมนตรีชุดใหม่", `รัฐบาลผสมจัดตั้งคณะรัฐมนตรีครบทุกกระทรวงแล้ว`);
+        }
         state.world.electionDay = new Date(state.date);
         state.world.electionDay.setDate(state.world.electionDay.getDate() + Data.ELECTION_TERM_DAYS);
 
@@ -1113,7 +1150,8 @@ export const engine = {
             Object.values(Data.MINISTRIES).forEach(m => { m.currentMinister = null; });
             state.activePolicies = [];
             state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
-            this.addNews("รัฐบาลพ่ายมติไม่ไว้วางใจ", `${state.player.party.name}หลุดจากอำนาจกลางสมัยประชุม สภาจัดตั้งรัฐบาลใหม่จากเสียงที่เหลือ`);
+            autoAppointCabinet();
+            this.addNews("รัฐบาลพ่ายมติไม่ไว้วางใจ", `${state.player.party.name}หลุดจากอำนาจกลางสมัยประชุม สภาจัดตั้งรัฐบาลใหม่จากเสียงที่เหลือและแต่งตั้งคณะรัฐมนตรีครบแล้ว`);
         }
         document.getElementById('event-options').innerHTML = ousted
             ? `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1); ui.updateMain(); ui.renderCabinet(); ui.renderMinistryList(); ui.renderParliament();" class="w-full p-4 bg-black rounded-xl text-white font-sans">เข้าสู่ฝ่ายค้าน</button>`
