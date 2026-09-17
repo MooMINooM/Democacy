@@ -338,7 +338,8 @@ export const INDUSTRY_TYPES = {
     "อุตสาหกรรม": { icon: "fa-industry", label: "อุตสาหกรรม", baseOutput: 1.8, sensitivity: { education: 0.3, unemployment: -0.3, military: 0.15 } },
     "การท่องเที่ยว": { icon: "fa-umbrella-beach", label: "การท่องเที่ยว", baseOutput: 1.4, sensitivity: { crime: -0.4 } },
     "เทคโนโลยี": { icon: "fa-microchip", label: "เทคโนโลยี", baseOutput: 2.2, sensitivity: { education: 0.5 } },
-    "ประมง": { icon: "fa-fish", label: "ประมงและทะเล", baseOutput: 1.0, sensitivity: { environment: 0.3 } }
+    "ประมง": { icon: "fa-fish", label: "ประมงและทะเล", baseOutput: 1.0, sensitivity: { environment: 0.3 } },
+    "โลจิสติกส์และการส่งออก": { icon: "fa-truck-fast", label: "โลจิสติกส์และการส่งออก", baseOutput: 1.6, sensitivity: { crime: -0.3, unemployment: -0.2 } }
 };
 export const REGION_INDUSTRY_DEFAULT = {
     "เหนือ": "เกษตรกรรม",
@@ -363,4 +364,17 @@ export const PROVINCE_INDUSTRY_OVERRIDES = {
     "ปราจีนบุรี": "อุตสาหกรรม",
     "เชียงใหม่": "การท่องเที่ยว",
     "เชียงราย": "การท่องเที่ยว"
+};
+
+// Which industries a province can realistically pivot toward, by region: a landlocked
+// northeastern province can't become a fishery, a mountainous northern one can't become a
+// logistics/export hub the way a border or port province can. investProvince() in engine.js
+// only allows a shift within this set -- geography gates the choice, not an arbitrary picklist.
+export const REGION_ELIGIBLE_INDUSTRIES = {
+    "เหนือ": ["เกษตรกรรม", "การท่องเที่ยว"],
+    "อีสาน": ["เกษตรกรรม", "อุตสาหกรรม", "โลจิสติกส์และการส่งออก"],
+    "กลาง": ["เกษตรกรรม", "อุตสาหกรรม", "เทคโนโลยี", "โลจิสติกส์และการส่งออก"],
+    "ตะวันออก": ["เกษตรกรรม", "อุตสาหกรรม", "การท่องเที่ยว", "โลจิสติกส์และการส่งออก"],
+    "ตะวันตก": ["เกษตรกรรม", "การท่องเที่ยว", "โลจิสติกส์และการส่งออก"],
+    "ใต้": ["เกษตรกรรม", "ประมง", "การท่องเที่ยว"]
 };
