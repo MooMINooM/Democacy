@@ -619,14 +619,31 @@ export const engine = {
         ui.updateMain(); ui.renderForeignList(); gameClock.setSpeed(1);
     },
 
-    investProvince(name) {
+    // targetIndustry omitted (or equal to the province's current industry) just deepens the
+    // existing industry, same as before. A different targetIndustry restructures the province
+    // toward it instead -- only when REGION_ELIGIBLE_INDUSTRIES allows it for that region, so
+    // the choice is always geography-gated, never an arbitrary picklist. Restructuring costs
+    // more and resets investmentLevel low, since a province starting a new industry from
+    // scratch hasn't built up the same capacity yet.
+    investProvince(name, targetIndustry) {
         const prov = state.provinces.find(p => p.name === name);
-        const cost = 2e9;
+        const isShift = targetIndustry && targetIndustry !== prov.industry;
+        if (isShift) {
+            const eligible = Data.REGION_ELIGIBLE_INDUSTRIES[prov.region] || [];
+            if (!eligible.includes(targetIndustry)) { alert(`สภาพภูมิศาสตร์ของ${prov.name}ไม่เอื้อต่ออุตสาหกรรมนี้`); return; }
+        }
+        const cost = isShift ? 6e9 : 2e9;
         if (state.world.nationalBudget < cost) { alert(`งบประเทศไม่พอ (ต้องการ ฿${(cost/1e9).toFixed(1)}B)`); return; }
         state.world.nationalBudget -= cost;
-        if (!prov.modifiers) prov.modifiers = [];
-        prov.modifiers.push({ source: "ลงทุนพัฒนาอุตสาหกรรม", perDay: 30 / 60, remaining: 60 });
-        this.addNews(`ลงทุนพัฒนา${prov.name}`, `รัฐบาลอัดฉีดงบพัฒนาอุตสาหกรรม${Data.INDUSTRY_TYPES[prov.industry]?.label || ''}ในพื้นที่`);
+        if (isShift) {
+            prov.industry = targetIndustry;
+            prov.investmentLevel = 25;
+            this.addNews(`ปรับโครงสร้างเศรษฐกิจ${prov.name}`, `รัฐบาลผลักดันให้${prov.name}ปรับทิศทางสู่${Data.INDUSTRY_TYPES[targetIndustry]?.label}`);
+        } else {
+            if (!prov.modifiers) prov.modifiers = [];
+            prov.modifiers.push({ source: "ลงทุนพัฒนาอุตสาหกรรม", perDay: 30 / 60, remaining: 60 });
+            this.addNews(`ลงทุนพัฒนา${prov.name}`, `รัฐบาลอัดฉีดงบพัฒนาอุตสาหกรรม${Data.INDUSTRY_TYPES[prov.industry]?.label || ''}ในพื้นที่`);
+        }
         ui.updateMain(); ui.showProvinceDetail(prov.name);
     },
 

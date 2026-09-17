@@ -363,7 +363,17 @@ export const ui = {
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-1"><span>ระดับการลงทุน</span><span>${investLevel.toFixed(0)}%</span></div>
                 <div class="w-full h-2 bg-stone-200 border border-black mb-2"><div class="h-full bg-emerald-600" style="width:${investLevel}%"></div></div>
                 <div class="text-[9px] text-stone-500 mb-3 leading-relaxed">ลงทุนสูงกว่า 50% ช่วยผลผลิตและเพิ่มคะแนนเสียงให้พรรครัฐบาลในเขตนี้ตอนเลือกตั้ง ปล่อยให้ต่ำกว่า 50% จะถูกลงโทษที่คูหาเช่นกัน</div>
-                <button onclick="engine.investProvince('${p.name}')" class="w-full py-2 text-[10px] font-bold border-2 border-black bg-white hover:bg-black hover:text-white transition uppercase">ลงทุนพัฒนาอุตสาหกรรม (฿2B งบชาติ)</button>
+                <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2">ทิศทางเศรษฐกิจ (ตามสภาพภูมิศาสตร์ภาค${p.region})</div>
+                <div class="space-y-2">
+                    ${(Data.REGION_ELIGIBLE_INDUSTRIES[p.region] || []).map(ind => {
+                        const meta = Data.INDUSTRY_TYPES[ind]; if (!meta) return '';
+                        const isCurrent = ind === p.industry;
+                        return `<button onclick="engine.investProvince('${p.name}', '${ind}')" class="w-full flex items-center justify-between py-2 px-3 text-[10px] font-bold border-2 border-black uppercase transition ${isCurrent ? 'bg-black text-white' : 'bg-white hover:bg-stone-100'}">
+                            <span><i class="fas ${meta.icon} mr-1.5"></i>${isCurrent ? 'ลงทุนเพิ่ม' : 'ปรับเป็น'}: ${meta.label}</span>
+                            <span>฿${isCurrent ? '2' : '6'}B</span>
+                        </button>`;
+                    }).join('')}
+                </div>
             </div>
             ${p.lastResult ? `
             <div class="mt-4 pt-3 border-t-2 border-black">
