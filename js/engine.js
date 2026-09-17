@@ -24,8 +24,17 @@ function provinceOutput(prov) {
     // Trade exposure: each industry leans on the one foreign power that shares its keyIndustry
     // (Data.FOREIGN_POWERS), so a souring or improving relationship hits the provinces running
     // that industry specifically, on top of whatever it does to the national trade number.
+    // Logistics/export has no single keyIndustry partner -- it's the one industry whose whole
+    // business is trade in general, so it leans on the same tradeWeight-weighted average
+    // relation processMonthlyUpdate() uses for the national trade bonus, not one country.
     const partner = state.foreign.find(c => c.keyIndustry === prov.industry);
-    if (partner) multiplier += ((partner.relation - 50) / 50) * 0.25;
+    if (partner) {
+        multiplier += ((partner.relation - 50) / 50) * 0.25;
+    } else if (prov.industry === "โลจิสติกส์และการส่งออก") {
+        const totalTradeWeight = state.foreign.reduce((s, c) => s + c.tradeWeight, 0);
+        const weightedRelation = state.foreign.reduce((s, c) => s + (c.relation - 50) * c.tradeWeight, 0) / totalTradeWeight;
+        multiplier += (weightedRelation / 50) * 0.3;
+    }
     return prov.pop * industry.baseOutput * Math.max(0.3, multiplier);
 }
 

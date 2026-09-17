@@ -346,6 +346,10 @@ export const ui = {
         const approvalColor = approval > 60 ? 'text-emerald-700' : (approval < 40 ? 'text-red-700' : 'text-amber-700');
         const industry = Data.INDUSTRY_TYPES[p.industry];
         const tradePartner = state.foreign.find(c => c.keyIndustry === p.industry);
+        const isLogistics = p.industry === "โลจิสติกส์และการส่งออก";
+        const avgTradeRelation = isLogistics
+            ? state.foreign.reduce((s, c) => s + c.relation * c.tradeWeight, 0) / state.foreign.reduce((s, c) => s + c.tradeWeight, 0)
+            : null;
         const investLevel = p.investmentLevel ?? 50;
         const cont = document.getElementById('province-detail'); if (!cont) return;
         cont.innerHTML = `
@@ -358,6 +362,7 @@ export const ui = {
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>Approval ฐานเสียง</span><span class="font-mono font-bold ${approvalColor}">${approval.toFixed(0)}%</span></div>
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${industry?.icon || 'fa-industry'} mr-1"></i>อุตสาหกรรมหลัก</span><span class="font-bold">${industry?.label || p.industry}</span></div>
                 ${tradePartner ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${tradePartner.icon} mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">${tradePartner.name} (${tradePartner.relation.toFixed(0)}%)</span></div>` : ''}
+                ${isLogistics ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas fa-earth-asia mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">ทุกประเทศเฉลี่ย (${avgTradeRelation.toFixed(0)}%)</span></div>` : ''}
             </div>
             <div class="mt-4 pt-3 border-t-2 border-black">
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-1"><span>ระดับการลงทุน</span><span>${investLevel.toFixed(0)}%</span></div>
