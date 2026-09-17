@@ -288,8 +288,17 @@ export const ui = {
                 </div>
                 <div class="font-bold text-sm uppercase tracking-wide border-t-2 border-black pt-2 mt-2">${f.name}</div>
                 <div class="w-full bg-stone-200 h-1 mt-2"><div class="h-full bg-black" style="width: ${f.approval}%"></div></div>
+                ${(f.modifiers && f.modifiers.length > 0) ? `
+                <div class="mt-3 pt-2 border-t border-stone-200 space-y-1">
+                    ${f.modifiers.slice(0, 3).map(m => `
+                        <div class="flex justify-between text-[9px] text-stone-500 gap-2">
+                            <span class="truncate">${m.source}</span>
+                            <span class="font-mono whitespace-nowrap ${m.perDay > 0 ? 'text-emerald-700' : 'text-red-700'}">${m.perDay > 0 ? '+' : ''}${(m.perDay * m.remaining).toFixed(0)} · ${Math.ceil(m.remaining)}d</span>
+                        </div>
+                    `).join('')}
+                </div>` : ''}
             </div>
-        `).join(""); 
+        `).join("");
     },
 
     // --- 6. MP LIST (!!! DO NOT CHANGE LOGIC, ONLY NEATNESS !!!) ---

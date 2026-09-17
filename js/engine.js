@@ -33,7 +33,11 @@ export const gameClock = {
              if(army && army.approval < 50) engine.triggerCoup();
         }
         
-        state.factions.forEach(f => { f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5)); });
+        state.factions.forEach(f => {
+            (f.modifiers || []).forEach(m => { f.approval = Math.max(0, Math.min(100, f.approval + m.perDay * state.speed)); m.remaining -= state.speed; });
+            f.modifiers = (f.modifiers || []).filter(m => m.remaining > 0);
+            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5));
+        });
         if (state.date.getDate() === 1) engine.processMonthlyUpdate();
         ui.updateMain();
     }
@@ -48,7 +52,7 @@ export const engine = {
         state.lastVoteResults = null; 
         state.lastVoteLog = []; 
 
-        state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5) }));
+        state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5), modifiers: [] }));
         if(state.parties.length === 0) state.parties = this.generateGameParties();
         state.leaders = [];
         let nIdx = 0;
@@ -139,6 +143,15 @@ export const engine = {
     },
 
     addNews(h, b = "") { state.news.unshift({ date: state.date.toLocaleDateString('th-TH'), headline: h, body: b || "วิเคราะห์สถานการณ์วันนี้..." }); ui.renderNews(); },
+
+    // Spreads a policy's impact on a faction over `days` instead of an instant jolt,
+    // so the reaction is still building (and readable in the Factions tab) while it lasts.
+    applyFactionImpact(factionName, value, source, days = 60) {
+        const fac = state.factions.find(f => f.name === factionName);
+        if (!fac) return;
+        if (!fac.modifiers) fac.modifiers = [];
+        fac.modifiers.push({ source, perDay: value / days, remaining: days });
+    },
     
     processMonthlyUpdate() {
         state.world.growth += (Math.random() - 0.5) * 0.1;
@@ -414,7 +427,7 @@ export const engine = {
             if (p.stage < 3) { p.stage++; p.isDeliberating = true; p.remainingDays = p.totalDays; }
             else {
                 state.world.nationalBudget -= p.cost;
-                Object.entries(p.impact).forEach(([fn,v]) => { const fac = state.factions.find(x=>x.name===fn); if(fac) fac.approval += v; });
+                Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, v, p.name));
                 this.addNews(`${p.name} บังคับใช้เป็นกฎหมาย`);
                 state.activePolicies = state.activePolicies.filter(x => x.name !== pName);
             }
