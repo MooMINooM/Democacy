@@ -21,6 +21,11 @@ function provinceOutput(prov) {
         const val = state.world[stat] ?? 50;
         multiplier += ((val - 50) / 50) * weight;
     });
+    // Trade exposure: each industry leans on the one foreign power that shares its keyIndustry
+    // (Data.FOREIGN_POWERS), so a souring or improving relationship hits the provinces running
+    // that industry specifically, on top of whatever it does to the national trade number.
+    const partner = state.foreign.find(c => c.keyIndustry === prov.industry);
+    if (partner) multiplier += ((partner.relation - 50) / 50) * 0.25;
     return prov.pop * industry.baseOutput * Math.max(0.3, multiplier);
 }
 
@@ -536,14 +541,16 @@ export const engine = {
         state.world.nationalBudget -= cost;
         this.applyForeignImpact(countryId, 15, "ข้อตกลงการค้า", 90);
         state.world.growth += 0.3;
-        this.addNews(`ลงนามข้อตกลงการค้ากับ${c.name}`, "กระตุ้นเศรษฐกิจและความสัมพันธ์ระหว่างประเทศ");
+        const industryLabel = Data.INDUSTRY_TYPES[c.keyIndustry]?.label || c.keyIndustry;
+        this.addNews(`ลงนามข้อตกลงการค้ากับ${c.name}`, `กระตุ้นเศรษฐกิจและความสัมพันธ์ระหว่างประเทศ จังหวัดที่ทำ${industryLabel}ได้อานิสงส์มากที่สุด`);
         ui.updateMain(); ui.renderForeignList();
     },
 
     triggerDiplomaticIncident(c) {
         state.world.growth = Math.max(-10, state.world.growth - 1);
         c.relation = Math.max(0, c.relation - 5);
-        this.addNews(`${c.name}กดดันทางการค้า`, `ความสัมพันธ์กับ${c.name}ทรุดหนักจนกระทบการค้าระหว่างประเทศ`);
+        const industryLabel = Data.INDUSTRY_TYPES[c.keyIndustry]?.label || c.keyIndustry;
+        this.addNews(`${c.name}กดดันทางการค้า`, `ความสัมพันธ์กับ${c.name}ทรุดหนักจนกระทบการค้าระหว่างประเทศ จังหวัดที่ทำ${industryLabel}จะได้รับผลกระทบหนักสุด`);
         ui.updateMain(); ui.renderForeignList();
     },
 

@@ -23,12 +23,15 @@ export const FACTION_DATA = [
 ];
 export const FACTION_NAMES = FACTION_DATA.map(f => f.name);
 
+// keyIndustry ties each country to the one INDUSTRY_TYPES sector Thailand trades with it most --
+// souring or strengthening that relationship (js/engine.js's provinceOutput()) now hits the
+// provinces running that industry specifically, not just a flat national trade number.
 export const FOREIGN_POWERS = [
-    { id: "US", name: "สหรัฐอเมริกา", icon: "fa-flag-usa", ideology: "เสรีนิยม", tradeWeight: 25 },
-    { id: "CN", name: "จีน", icon: "fa-yin-yang", ideology: "อำนาจนิยม", tradeWeight: 30 },
-    { id: "EU", name: "สหภาพยุโรป", icon: "fa-star", ideology: "สิทธิมนุษยชน", tradeWeight: 20 },
-    { id: "JP", name: "ญี่ปุ่น", icon: "fa-torii-gate", ideology: "โลกาภิวัตน์", tradeWeight: 15 },
-    { id: "AS", name: "อาเซียน", icon: "fa-people-group", ideology: "ประชานิยม", tradeWeight: 10 }
+    { id: "US", name: "สหรัฐอเมริกา", icon: "fa-flag-usa", ideology: "เสรีนิยม", tradeWeight: 25, keyIndustry: "เทคโนโลยี" },
+    { id: "CN", name: "จีน", icon: "fa-yin-yang", ideology: "อำนาจนิยม", tradeWeight: 30, keyIndustry: "เกษตรกรรม" },
+    { id: "EU", name: "สหภาพยุโรป", icon: "fa-star", ideology: "สิทธิมนุษยชน", tradeWeight: 20, keyIndustry: "การท่องเที่ยว" },
+    { id: "JP", name: "ญี่ปุ่น", icon: "fa-torii-gate", ideology: "โลกาภิวัตน์", tradeWeight: 15, keyIndustry: "อุตสาหกรรม" },
+    { id: "AS", name: "อาเซียน", icon: "fa-people-group", ideology: "ประชานิยม", tradeWeight: 10, keyIndustry: "ประมง" }
 ];
 
 // --- MAPPING ICON สำหรับ String (Ideology & Goal) ---

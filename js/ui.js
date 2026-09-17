@@ -345,6 +345,7 @@ export const ui = {
         const approval = faction ? faction.approval : 50;
         const approvalColor = approval > 60 ? 'text-emerald-700' : (approval < 40 ? 'text-red-700' : 'text-amber-700');
         const industry = Data.INDUSTRY_TYPES[p.industry];
+        const tradePartner = state.foreign.find(c => c.keyIndustry === p.industry);
         const investLevel = p.investmentLevel ?? 50;
         const cont = document.getElementById('province-detail'); if (!cont) return;
         cont.innerHTML = `
@@ -356,6 +357,7 @@ export const ui = {
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>ฐานเสียงหลัก</span><span class="font-bold">${p.baseFaction}</span></div>
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>Approval ฐานเสียง</span><span class="font-mono font-bold ${approvalColor}">${approval.toFixed(0)}%</span></div>
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${industry?.icon || 'fa-industry'} mr-1"></i>อุตสาหกรรมหลัก</span><span class="font-bold">${industry?.label || p.industry}</span></div>
+                ${tradePartner ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${tradePartner.icon} mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">${tradePartner.name} (${tradePartner.relation.toFixed(0)}%)</span></div>` : ''}
             </div>
             <div class="mt-4 pt-3 border-t-2 border-black">
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-1"><span>ระดับการลงทุน</span><span>${investLevel.toFixed(0)}%</span></div>
@@ -427,7 +429,7 @@ export const ui = {
                     </div>
                 </div>
                 <div class="font-bold text-sm uppercase tracking-wide border-t-2 border-black pt-2 mt-2">${c.name}</div>
-                <div class="text-[9px] text-stone-500 italic mb-1">แนวคิด: ${c.ideology}</div>
+                <div class="text-[9px] text-stone-500 italic mb-1">แนวคิด: ${c.ideology} · คู่ค้าหลัก: ${Data.INDUSTRY_TYPES[c.keyIndustry]?.label || c.keyIndustry}</div>
                 <div class="w-full bg-stone-200 h-1 mt-1"><div class="h-full ${relationColor}" style="width: ${c.relation}%"></div></div>
                 ${(c.modifiers && c.modifiers.length > 0) ? `
                 <div class="mt-3 pt-2 border-t border-stone-200 space-y-1">
