@@ -12,6 +12,14 @@ function ideologiesConflict(a, b) {
 // A faction's rough weight in the national economy: how many people, how well-off they are.
 function factionOutput(f) { return f.basePop * f.wealth; }
 
+// Dynamic Society (Phase 6): fixed reference points computed once from the static faction data,
+// not from a live province population that can be 10x the size these game-balance blocs were
+// ever calibrated on -- see processMonthlyUpdate's class-transition step for why this matters.
+const CLASS_FACTION_POOL_TOTAL = Data.FACTION_DATA
+    .filter(f => Object.values(Data.FACTION_INDUSTRY_LINK).some(shares => shares[f.name] !== undefined))
+    .reduce((s, f) => s + f.basePop, 0);
+const UNEMPLOYED_BASELINE_POP = Data.FACTION_DATA.find(f => f.name === "คนว่างงาน")?.basePop || 0;
+
 // A province's actual production, given its industry's base output, the national stats that
 // industry is sensitive to (Phase 4), and however much investment has built up there.
 function provinceOutput(prov) {
@@ -147,6 +155,40 @@ function getProductionBreakdown() {
         const pop = provs.reduce((s, p) => s + p.pop, 0);
         const perCapita = output / pop;
         rows[meta.label] = state.world.baseProductionPerCapita ? (perCapita / state.world.baseProductionPerCapita - 1) * 10 : 0;
+    });
+    return rows;
+}
+
+// Dynamic Society (Phase 6): a third lens on the country besides "growing" and "stable" --
+// whether it's still agrarian or has shifted into industry/services, read straight off the same
+// per-province industry mix investProvince() changes, not a new stat. Paired with which class
+// faction is actually gaining or losing population this term (see processMonthlyUpdate's
+// class-transition drift), so a player can watch their industrial policy reshape society, not
+// just the GDP number.
+function getSocietyContext() {
+    const totalPop = state.provinces.reduce((s, p) => s + p.pop, 0);
+    const agrarianPop = state.provinces.filter(p => p.industry === "เกษตรกรรม" || p.industry === "ประมง").reduce((s, p) => s + p.pop, 0);
+    const agrarianShare = totalPop > 0 ? agrarianPop / totalPop : 0;
+    const societyType = agrarianShare > 0.6 ? "Agrarian" : agrarianShare > 0.35 ? "Transitioning" : "Industrial";
+
+    const tracked = state.factions.filter(f => f.popHistory && f.popHistory.length >= 2);
+    let growingClass = null, shrinkingClass = null;
+    if (tracked.length > 0) {
+        const ranked = [...tracked].sort((a, b) => (b.basePop - b.popHistory[0]) - (a.basePop - a.popHistory[0]));
+        if (ranked[0].basePop - ranked[0].popHistory[0] > 0) growingClass = ranked[0].name;
+        const last = ranked[ranked.length - 1];
+        if (last.basePop - last.popHistory[0] < 0) shrinkingClass = last.name;
+    }
+    return { societyType, agrarianShare, growingClass, shrinkingClass };
+}
+// Which class factions currently hold how much of the population tied to production (the same
+// FACTION_INDUSTRY_LINK shares processMonthlyUpdate() drifts basePop toward), in the same +/-
+// vs-starting-point format the other why-buttons use.
+function getClassCompositionBreakdown() {
+    const rows = {};
+    state.factions.forEach(f => {
+        if (!f.popHistory || f.popHistory.length === 0) return;
+        rows[f.name] = ((f.basePop - f.popHistory[0]) / f.popHistory[0]) * 100;
     });
     return rows;
 }
@@ -290,7 +332,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown,
 
     init() {
         state.voteModifier = null;
@@ -506,13 +548,53 @@ export const engine = {
         this.addNews("รายได้ภาษีประจำเดือน", `รัฐเก็บภาษีได้ ฿${(taxRevenue/1e9).toFixed(1)}B จากภาวะเศรษฐกิจที่เติบโต ${state.world.growth.toFixed(1)}% และการค้าระหว่างประเทศ`);
 
         // Population dynamics: each province's headcount drifts monthly instead of staying
-        // frozen for the whole game. A slow baseline tracks national growth; the real driver
-        // is investmentLevel -- a province built up over a term pulls in migrants, one left
-        // neglected bleeds them, slowly enough that it only shows up over years of play.
+        // frozen for the whole game. A slow national baseline tracks overall growth.
+        // Migration (Phase 6): the investment-driven pull is now measured against each
+        // province's own regional peers, not a flat 50 -- a mid-tier province in a booming
+        // region still loses people to its neighbors, and since the pull is a deviation from
+        // the region's own average, what one province in a region gains is what its
+        // under-invested neighbors lose (net movement within the region, not population
+        // created from nowhere), on top of the separate national growth term.
+        const regionInvestment = {};
+        state.provinces.forEach(p => {
+            const r = (regionInvestment[p.region] ||= { sum: 0, count: 0 });
+            r.sum += p.investmentLevel ?? 50; r.count++;
+        });
         state.provinces.forEach(prov => {
-            const investmentPull = ((prov.investmentLevel ?? 50) - 50) * 0.00003;
+            const regionAvg = regionInvestment[prov.region].sum / regionInvestment[prov.region].count;
+            const migrationPull = ((prov.investmentLevel ?? 50) - regionAvg) * 0.00008;
             const nationalBaseline = state.world.growth * 0.00015;
-            prov.pop = Math.max(50000, Math.round(prov.pop * (1 + investmentPull + nationalBaseline)));
+            prov.pop = Math.max(50000, Math.round(prov.pop * (1 + migrationPull + nationalBaseline)));
+        });
+
+        // Class transition (Phase 6): the 5 production-linked factions (เกษตรกร, แรงงาน,
+        // ชนชั้นกลาง, เทคโนแครต, ท้องถิ่น) drift their basePop toward whatever share of the
+        // *national industry mix* the provinces running their industry now hold
+        // (FACTION_INDUSTRY_LINK), reallocating a fixed pool (CLASS_FACTION_POOL_TOTAL, each
+        // faction's own starting basePop -- these are game-balance-sized political/economic
+        // blocs, not literal census categories) rather than importing raw province headcounts
+        // directly: an early version targeted province.pop straight (up to tens of millions)
+        // against factions calibrated on a much smaller starting scale and blew เกษตรกร up
+        // +180% and คนว่างงาน (a 2M bloc) up +600% within 3 years of idle play. คนว่างงาน
+        // instead scales off its own starting size relative to the unemployment baseline, same
+        // reasoning. Slow (3%/month) so a shift only reads clearly over a term.
+        const industryPop = {};
+        state.provinces.forEach(p => { industryPop[p.industry] = (industryPop[p.industry] || 0) + p.pop; });
+        const totalIndustryPop = Object.values(industryPop).reduce((s, v) => s + v, 0) || 1;
+        const classTargets = {};
+        Object.entries(Data.FACTION_INDUSTRY_LINK).forEach(([industry, shares]) => {
+            const industryShare = (industryPop[industry] || 0) / totalIndustryPop;
+            Object.entries(shares).forEach(([factionName, share]) => {
+                classTargets[factionName] = (classTargets[factionName] || 0) + industryShare * share * CLASS_FACTION_POOL_TOTAL;
+            });
+        });
+        classTargets["คนว่างงาน"] = UNEMPLOYED_BASELINE_POP * (state.world.unemployment / Data.WORLD_STAT_META.unemployment.baseline);
+        state.factions.forEach(f => {
+            if (classTargets[f.name] === undefined) return;
+            f.basePop = Math.max(10000, Math.round(f.basePop + (classTargets[f.name] - f.basePop) * 0.03));
+            if (!f.popHistory) f.popHistory = [];
+            f.popHistory.push(f.basePop);
+            if (f.popHistory.length > 6) f.popHistory.shift();
         });
 
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);

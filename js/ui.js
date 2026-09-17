@@ -65,6 +65,17 @@ export const ui = {
         return delta > 0 ? `<i class="fas fa-arrow-up ${cls}"></i>` : `<i class="fas fa-arrow-down ${cls}"></i>`;
     },
 
+    // Dynamic Society (Phase 6): same idea as trendArrow but over a faction's own popHistory
+    // (basePop is per-faction, not a state.history.* series) -- no "good" direction here, a class
+    // shrinking isn't inherently bad, it's just a fact about who the player's policies favored.
+    factionTrend(f) {
+        const h = f.popHistory;
+        if (!h || h.length < 2) return '';
+        const delta = h[h.length - 1] - h[h.length - 2];
+        if (Math.abs(delta) < h[h.length - 1] * 0.002) return '<i class="fas fa-minus text-stone-400"></i>';
+        return delta > 0 ? '<i class="fas fa-arrow-up text-emerald-600"></i>' : '<i class="fas fa-arrow-down text-red-600"></i>';
+    },
+
     // Explainability (Phase 2): reuses the event-modal to show the ranked factors behind a
     // number, instead of the player only ever seeing the resulting figure. goodDirection matches
     // WORLD_STAT_META's convention: +1 means a positive contribution is good (growth, approval,
@@ -105,6 +116,7 @@ export const ui = {
         this.renderNationalStats();
         this.renderContextPanel();
         this.renderEconomyPanel();
+        this.renderSocietyPanel();
     },
 
     // Dynamic Context Engine (Phase 1): shows the derived situational labels and the two new
@@ -154,6 +166,26 @@ export const ui = {
                 <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-earth-asia mr-1"></i>สัดส่วนผลผลิตที่พึ่งพาการค้าต่างประเทศ</span><span class="${exposure > 60 ? 'text-amber-700' : 'text-stone-700'}">${exposure.toFixed(0)}%</span></div>
                 <div class="w-full h-2 bg-stone-200 border border-black"><div class="h-full bg-blue-600" style="width:${exposure}%"></div></div>
                 <div class="text-[9px] text-stone-500 mt-2">คลิกดูว่าอุตสาหกรรมภาคไหนกำลังดันหรือฉุดผลผลิตของประเทศ</div>
+            </button>`;
+    },
+
+    // Dynamic Society (Phase 6): the country's agrarian-vs-industrial character, plus which class
+    // is actually growing or shrinking right now -- a slower, structural dimension separate from
+    // the approval/growth loop, so investing in factories over farms visibly reshapes society
+    // over a term, not just the GDP number.
+    renderSocietyPanel() {
+        const cont = document.getElementById('society-panel'); if (!cont) return;
+        const ctx = engine.getSocietyContext();
+        const SOCIETY_LABELS = { Agrarian: ["สังคมเกษตรกรรม", "text-amber-700"], Transitioning: ["กำลังเปลี่ยนผ่าน", "text-stone-700"], Industrial: ["สังคมอุตสาหกรรม/เมือง", "text-blue-700"] };
+        const label = SOCIETY_LABELS[ctx.societyType];
+        cont.innerHTML = `
+            <button onclick="ui.showWhy('โครงสร้างชนชั้นทางสังคม', engine.getClassCompositionBreakdown())" class="border-2 border-black p-3 text-left hover:bg-stone-50 transition">
+                <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-people-roof mr-1"></i>โครงสร้างสังคม</span><span class="${label[1]}">${label[0]}</span></div>
+                <div class="w-full h-2 bg-stone-200 border border-black mb-2"><div class="h-full bg-amber-600" style="width:${ctx.agrarianShare * 100}%"></div></div>
+                <div class="text-[9px] text-stone-500 leading-relaxed">
+                    ${ctx.growingClass ? `กลุ่ม "${ctx.growingClass}" กำลังขยายตัว` : 'ยังไม่มีข้อมูลแนวโน้มชนชั้นเพียงพอ'}
+                    ${ctx.shrinkingClass ? ` &middot; กลุ่ม "${ctx.shrinkingClass}" กำลังหดตัว` : ''}
+                </div>
             </button>`;
     },
 
@@ -515,6 +547,10 @@ export const ui = {
                 <div class="flex justify-between text-[9px] text-stone-500 mt-2" title="สัดส่วนต่อผลผลิตทางเศรษฐกิจของประเทศ (ประชากร x ความมั่งคั่ง)">
                     <span>น้ำหนักเศรษฐกิจ</span>
                     <span class="font-mono font-bold">${econShare.toFixed(1)}%</span>
+                </div>
+                <div class="flex justify-between text-[9px] text-stone-500 mt-1" title="จำนวนประชากรกลุ่มนี้ในปัจจุบัน">
+                    <span>ประชากร</span>
+                    <span class="font-mono font-bold">${(f.basePop / 1e6 >= 1 ? (f.basePop / 1e6).toFixed(1) + 'M' : (f.basePop / 1e3).toFixed(0) + 'K')} ${this.factionTrend(f)}</span>
                 </div>
                 ${(f.modifiers && f.modifiers.length > 0) ? `
                 <div class="mt-3 pt-2 border-t border-stone-200 space-y-1">
