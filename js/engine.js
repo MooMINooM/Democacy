@@ -22,6 +22,7 @@ export const gameClock = {
         Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; });
         state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
         state.world.stabilityPenalty = Math.max(0, (state.world.stabilityPenalty || 0) - 0.5 * state.speed);
+        state.leaders.forEach(l => { if (l.switchCooldown > 0) l.switchCooldown -= state.speed; });
 
         if(state.date.getDate() === 15 && Math.random() < 0.1) engine.aiPropose();
         if(state.date.getDate() === 28 && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
@@ -85,6 +86,8 @@ export const engine = {
                         socio: socio
                     },
                     conviction: Math.floor(Math.random() * 100),
+                    trust: 50,
+                    switchCooldown: 0,
                     cash: cash
                 });
             }
@@ -108,7 +111,7 @@ export const engine = {
                 ideologies: shuffle(Data.IDEOLOGY_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 goals: shuffle(Data.GOAL_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 baseFaction: Data.FACTION_NAMES[Math.floor(Math.random() * Data.FACTION_NAMES.length)],
-                status: "Opposition", seats: 0 
+                status: "Opposition", seats: 0, trust: 70
             });
         }
         let rSeats = Data.TOTAL_SEATS;
@@ -166,14 +169,20 @@ export const engine = {
         const positionIncome = { "นายกรัฐมนตรี": 20000000, "หัวหน้าพรรค": 12000000, "สส. เขต": 6000000 }[state.player.position] || 6000000;
         state.player.personalFunds += positionIncome;
         this.addNews("รายรับประจำเดือน", `ท่านได้รับเงินเดือนและผลตอบแทนตำแหน่ง ฿${(positionIncome/1e6).toFixed(0)}M`);
+
+        // Trust slowly drifts back toward neutral each month, so grudges/goodwill fade but don't vanish instantly
+        state.leaders.forEach(l => { l.trust = l.trust + (50 - l.trust) * 0.1; });
+        state.parties.forEach(p => { p.trust = (p.trust ?? 70) + (70 - (p.trust ?? 70)) * 0.1; });
     },
     
     lobbyIndividual(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        const cost = 2000000 * mp.trait.socio.costMod; // Richer people cost more to lobby
+        const trustMod = mp.trust >= 70 ? 0.8 : (mp.trust <= 30 ? 1.4 : 1);
+        const cost = 2000000 * mp.trait.socio.costMod * trustMod; // Richer people cost more to lobby; a burned relationship costs more too
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
         state.player.personalFunds -= cost;
         mp.loyalty = Math.min(100, mp.loyalty + 15);
+        mp.trust = Math.min(100, mp.trust + 8);
         this.addNews(`ล็อบบี้สำเร็จ: ${mp.name}`, `ความสัมพันธ์ดีขึ้น (+15 Loyalty)`);
         
         // --- UI FEEDBACK ---
@@ -185,21 +194,28 @@ export const engine = {
 
     forceSwitchParty(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        const cost = 50000000 * mp.trait.ability.costMod * mp.trait.socio.costMod; 
-        
+        if (mp.switchCooldown > 0) {
+            ui.showFeedback('switch', false, mp.name, null); // ยังจำการเสนอครั้งก่อนอยู่ ยังไม่คุยด้วย
+            return;
+        }
+        const cost = 50000000 * mp.trait.ability.costMod * mp.trait.socio.costMod;
+
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
         if (mp.conviction > 85) {
+            mp.trust = Math.max(0, mp.trust - 20);
+            mp.switchCooldown = 60;
             ui.showFeedback('switch', false, mp.name, null); // ยึดมั่นอุดมการณ์สูง ปฏิเสธทันที
             return;
         }
 
         state.player.personalFunds -= cost;
-        mp.party.seats--; 
-        mp.party = state.player.party; 
-        mp.party.seats++; 
-        mp.loyalty = 50; 
-        mp.isCobra = false; 
-        
+        mp.party.seats--;
+        mp.party = state.player.party;
+        mp.party.seats++;
+        mp.loyalty = 50;
+        mp.trust = 60;
+        mp.isCobra = false;
+
         state.world.transparency -= 15;
         this.addNews(`ดูด สส. สำเร็จ!`, `${mp.name} ย้ายขั้วมาสังกัด ${state.player.party.name} อย่างเป็นทางการ`);
         
@@ -219,19 +235,21 @@ export const engine = {
         
         state.world.transparency = Math.max(0, state.world.transparency - 5);
 
-        // Success Chance: Depends on Loyalty and Ideology mismatch
-        const successChance = 100 - (mp.loyalty * 0.8);
+        // Success Chance: depends on loyalty, and on trust burned by any past failed approach
+        const trustPenalty = Math.max(0, 50 - mp.trust) * 0.4;
+        const successChance = 100 - (mp.loyalty * 0.8) - trustPenalty;
         const isSuccess = Math.random() * 100 <= successChance;
 
         if (!isSuccess) {
-             state.player.personalFunds -= (cost / 5); 
+             state.player.personalFunds -= (cost / 5);
+             mp.trust = Math.max(0, mp.trust - 15);
              // --- UI FEEDBACK (FAIL) ---
              ui.showFeedback('cobra', false, mp.name, () => ui.updateMain());
              return;
         }
-        
+
         state.player.personalFunds -= cost;
-        mp.isCobra = true; mp.loyalty = 0; 
+        mp.isCobra = true; mp.loyalty = 0; mp.trust = Math.max(0, mp.trust - 10);
         this.addNews(`ดีลลับสำเร็จ`, `สส. ${mp.name} เป็นงูเห่า (Transparency -5)`);
         
         // --- UI FEEDBACK (SUCCESS) ---
@@ -380,11 +398,13 @@ export const engine = {
         const party = state.parties.find(x => x.id === partyId);
         if (accepted) {
             state.world.nationalBudget -= demand.cost; state.world.transparency = Math.max(0, state.world.transparency - 8);
+            party.trust = Math.min(100, (party.trust ?? 70) + 10);
             this.addNews(`ดีลการเมือง: ${demand.name}`, `รัฐบาลอนุมัตินโยบายแลกเสียง`);
-            state.voteModifier = { partyId: partyId, type: 'support' }; 
+            state.voteModifier = { partyId: partyId, type: 'support' };
         } else {
+            party.trust = Math.max(0, (party.trust ?? 70) - 20);
             this.addNews(`ดีลล่ม! พรรคร่วมไม่พอใจ`, `การเจรจาแลกเปลี่ยนล้มเหลว`);
-            state.voteModifier = { partyId: partyId, type: 'rebel' }; 
+            state.voteModifier = { partyId: partyId, type: 'rebel' };
         }
         ui.showVoteInterface(pName); 
     },
@@ -401,6 +421,9 @@ export const engine = {
             const personalConflict = ideologiesConflict(mp.trait.ideology, p.ideology);
             if (personalMatch) score += 20;
             if (personalConflict) score -= 25;
+            if (mp.party.status === "Government" && mp.party.id !== state.player.party.id) {
+                score += ((mp.party.trust ?? 70) - 70) * 0.6;
+            }
             score += (p.coalitionBoost || 0);
             if (state.voteModifier && mp.party.id === state.voteModifier.partyId) {
                 if (state.voteModifier.type === 'support') score += 100; if (state.voteModifier.type === 'rebel') score -= 100;
