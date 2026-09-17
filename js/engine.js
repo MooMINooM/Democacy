@@ -56,6 +56,15 @@ function getProvinceContext(prov) {
     const laborCondition = state.world.unemployment < 15 ? "Shortage" : state.world.unemployment < 25 ? "Balanced" : "Surplus";
     return { growthStage, laborCondition };
 }
+// Political Actors (Phase 3): an MP's own base (mp.status faction) turning against them, close
+// enough to an election to matter, is what "seat security" means without a per-MP constituency
+// in this data model -- reusing the same faction link runVote() already scores against.
+function getMPElectoralRisk(mp) {
+    const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+    if (daysToElection > 180) return "Safe";
+    const statusApproval = state.factions.find(f => f.name === mp.status)?.approval ?? 50;
+    return statusApproval < 40 ? "AtRisk" : statusApproval < 55 ? "Competitive" : "Safe";
+}
 
 // Explainability (Phase 2): the same breakdown the formula itself used, handed back out so the
 // UI can show "why" instead of just the resulting number. Pressure and approval are cheap to
@@ -195,6 +204,10 @@ export const gameClock = {
             // 60-day modifier could never represent.
             target += (state.world.institutionalLegitimacy - 70) * 0.1;
             p.popularity = Math.max(0, Math.min(100, p.popularity + (target - p.popularity) * 0.01 * state.speed + (Math.random() - 0.5) * 0.3 * state.speed));
+            // Coalition Dependence (Phase 3): fades on its own if the player stops indulging this
+            // party's demands, over roughly the same multi-week timescale as MP/province/foreign
+            // saturation (Phase 1).
+            p.dependence = Math.max(0, (p.dependence || 0) - 1 * state.speed);
         });
 
         if (crossedMonthBoundary(prevDate, state.date)) engine.processMonthlyUpdate();
@@ -213,7 +226,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk,
 
     init() {
         state.voteModifier = null;
@@ -265,7 +278,8 @@ export const engine = {
                     conviction: Math.floor(Math.random() * 100),
                     trust: 50,
                     switchCooldown: 0,
-                    cash: cash
+                    cash: cash,
+                    ambition: Math.floor(Math.random() * 100) // Political Actors (Phase 3): how much a ministry post is worth to this MP
                 });
             }
         });
@@ -877,20 +891,30 @@ export const engine = {
         const l = state.leaders.find(x => x.id === lId);
         if (!l) return;
         Data.MINISTRIES[mName].currentMinister = l;
-        this.addNews(`แต่งตั้ง รมว.${mName}: ${l.name}`);
+        // Ambition (Phase 3): a promotion means far more to an MP who wanted one than to a
+        // content backbencher -- the same trait that makes ambitious MPs curry favor in
+        // runVote() pays off here.
+        const boost = 10 + (l.ambition ?? 50) * 0.3;
+        l.loyalty = Math.min(100, l.loyalty + boost);
+        l.trust = Math.min(100, l.trust + boost * 0.5);
+        this.addNews(`แต่งตั้ง รมว.${mName}: ${l.name}`, (l.ambition ?? 50) > 65 ? `${l.name}ดีใจมากที่ได้รับตำแหน่งที่ใฝ่ฝัน` : `${l.name}รับตำแหน่งด้วยความยินดี`);
         ui.renderCabinet(); ui.updateMain();
     },
 
     startVote(pName) {
         state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
         const p = state.activePolicies.find(x => x.name === pName);
-        if (p.proposer === "รัฐบาล" && Math.random() < 0.3) {
-            const coalitions = state.parties.filter(py => py.status === "Government" && py.id !== state.player.party.id);
+        const coalitions = state.parties.filter(py => py.status === "Government" && py.id !== state.player.party.id);
+        // Coalition Dependence (Phase 3): a coalition partner the player keeps indulging comes
+        // back asking for more, more often -- not just a flat 30% chance every time.
+        const avgDependence = coalitions.length > 0 ? coalitions.reduce((s, py) => s + (py.dependence || 0), 0) / coalitions.length : 0;
+        const quidProQuoChance = 0.3 + (avgDependence / 100) * 0.3;
+        if (p.proposer === "รัฐบาล" && Math.random() < quidProQuoChance) {
             if (coalitions.length > 0) {
                 const badActor = coalitions[Math.floor(Math.random() * coalitions.length)];
-                const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === "การคลัง" || t.ministry === "คมนาคม"); 
+                const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === "การคลัง" || t.ministry === "คมนาคม");
                 if (demands.length > 0) {
-                     ui.showQuidProQuo(p, demands[0], badActor); return; 
+                     ui.showQuidProQuo(p, demands[0], badActor); return;
                 }
             }
         }
@@ -902,7 +926,13 @@ export const engine = {
         const party = state.parties.find(x => x.id === partyId);
         if (accepted) {
             state.world.nationalBudget -= demand.cost; state.world.transparency = Math.max(0, state.world.transparency - 8);
-            party.trust = Math.min(100, (party.trust ?? 70) + 10);
+            // Coalition Dependence (Phase 3): giving in raises this party's expectations, so the
+            // same concession buys less trust each time it's repeated, mirroring the diminishing
+            // returns every other repeatable action in the game already has (Phase 1 saturation).
+            const dependence = party.dependence || 0;
+            const trustGain = Math.max(2, 10 - dependence * 0.08);
+            party.trust = Math.min(100, (party.trust ?? 70) + trustGain);
+            party.dependence = Math.min(100, dependence + 20);
             this.addNews(`ดีลการเมือง: ${demand.name}`, `รัฐบาลอนุมัตินโยบายแลกเสียง`);
             state.voteModifier = { partyId: partyId, type: 'support' };
         } else {
@@ -910,7 +940,7 @@ export const engine = {
             this.addNews(`ดีลล่ม! พรรคร่วมไม่พอใจ`, `การเจรจาแลกเปลี่ยนล้มเหลว`);
             state.voteModifier = { partyId: partyId, type: 'rebel' };
         }
-        ui.showVoteInterface(pName); 
+        ui.showVoteInterface(pName);
     },
 
     runVote(pName) {
@@ -932,7 +962,28 @@ export const engine = {
             if (state.voteModifier && mp.party.id === state.voteModifier.partyId) {
                 if (state.voteModifier.type === 'support') score += 100; if (state.voteModifier.type === 'rebel') score -= 100;
             }
-            let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra || (personalConflict && Math.random() < 0.25);
+
+            // Ambition (Phase 3): a backbencher hoping for a ministry curries favor with the
+            // government line instead of voting their own preference.
+            const isMinister = Object.values(Data.MINISTRIES).some(m => m.currentMinister?.id === mp.id);
+            if (mp.party.status === "Government" && !isMinister) score += (mp.ambition / 100) * 15;
+
+            // Issue Priority (Phase 3): a policy that lands on the exact issue an MP personally
+            // cares about (trait.goal matching the bill's goal) is judged by how it treats their
+            // own base, not by party discipline -- the "farm-focused MP votes against the party
+            // if the bill hits farmers hard" example from the design doc.
+            const issueMatch = mp.trait.goal === p.goal;
+            const impactOnOwnBase = p.impact?.[mp.status] || 0;
+            if (issueMatch) score += impactOnOwnBase * 0.8;
+
+            // Seat Security (Phase 3): close to an election, an MP whose own base has turned on
+            // them weighs that base's stake in the bill over the party line -- no per-MP
+            // constituency in this data model, so mp.status doubles as "their electorate".
+            const electoralRisk = getMPElectoralRisk(mp);
+            if (electoralRisk !== "Safe") score += impactOnOwnBase * (electoralRisk === "AtRisk" ? 1.0 : 0.5);
+
+            let voteAgainstParty = (mp.loyalty < 30 && Math.random() < 0.4) || mp.isCobra || (personalConflict && Math.random() < 0.25)
+                || (issueMatch && impactOnOwnBase < -15 && Math.random() < 0.5);
             if (mp.isCobra) { if(mp.party.status === "Government") voteAgainstParty = false; if(mp.party.status === "Opposition") voteAgainstParty = true; }
 
             let finalVote = "abstain";
