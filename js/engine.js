@@ -55,14 +55,19 @@ export const gameClock = {
         Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; });
         state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
         state.world.stabilityPenalty = Math.max(0, (state.world.stabilityPenalty || 0) - 0.5 * state.speed);
+        state.world.growthPenalty = Math.max(0, (state.world.growthPenalty || 0) - 0.15 * state.speed);
         state.leaders.forEach(l => { if (l.switchCooldown > 0) l.switchCooldown -= state.speed; });
 
         if(crossedDayOfMonth(prevDate, state.date, 15) && Math.random() < 0.1) engine.aiPropose();
         if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
            if(Math.random() < 0.05) engine.triggerNoConfidence();
         }
-        if(Math.random() < 0.02) engine.triggerCrisis();
-        if(state.world.transparency < 40 && Math.random() < 0.05) {
+        // tick() fires once per real second regardless of state.speed, but each tick now covers
+        // `state.speed` in-game days -- so every random-event check below is scaled by state.speed
+        // too, or a player idling at 3x would silently see ~3x fewer crises/incidents per in-game
+        // year than one at 1x, purely as a side effect of the speed toggle.
+        if(Math.random() < 0.02 * state.speed) engine.triggerCrisis();
+        if(state.world.transparency < 40 && Math.random() < 0.05 * state.speed) {
              const army = state.factions.find(f => f.name === "กองทัพ");
              if(army && army.approval < 50) engine.triggerCoup();
         }
@@ -102,13 +107,13 @@ export const gameClock = {
             const align = ideologiesConflict(c.ideology, govIdeo) ? -0.06 : (c.ideology === govIdeo ? 0.06 : 0);
             c.relation = Math.max(0, Math.min(100, c.relation + (Math.random() - 0.5) * 0.8 + align * state.speed));
         });
-        if (Math.random() < 0.01) {
+        if (Math.random() < 0.01 * state.speed) {
             const grudge = state.foreign.find(c => c.relation < 20);
             if (grudge) engine.triggerDiplomaticIncident(grudge);
         }
         // Relations have to collapse further than a mere diplomatic incident, and it's rarer
         // still, before a border conflict actually breaks out.
-        if (Math.random() < 0.003) {
+        if (Math.random() < 0.003 * state.speed) {
             const flashpoint = state.foreign.find(c => c.relation < 15);
             if (flashpoint) engine.triggerBorderConflict(flashpoint);
         }
@@ -315,7 +320,7 @@ export const engine = {
         const productionPerCapita = totalProduction / totalPop;
         const productionBias = state.world.baseProductionPerCapita ? (productionPerCapita / state.world.baseProductionPerCapita - 1) * 8 : 0;
 
-        const targetGrowth = weightedApproval * 0.16 + (qualityOfLife - 40) * 0.03 + productionBias;
+        const targetGrowth = weightedApproval * 0.16 + (qualityOfLife - 40) * 0.03 + productionBias - (state.world.growthPenalty || 0);
         state.world.growth = state.world.growth + (targetGrowth - state.world.growth) * 0.3 + (Math.random() - 0.5) * 0.4;
 
         // Trade partners in good standing add a little extra tax revenue on top of domestic growth; souring ones bleed it away
@@ -446,7 +451,11 @@ export const engine = {
     triggerCrisis() {
         const type = Math.random() > 0.5 ? "Economic" : "Protest";
         if (type === "Economic") {
-            state.world.growth -= 2.5;
+            // Mirrors the Protest branch's stabilityPenalty: a temporary, decaying drag (via
+            // tick()'s growthPenalty decay) instead of a permanent subtraction, so repeated
+            // crises fade over a couple of weeks like everything else in the game instead of
+            // requiring the monthly growth blend alone to claw them back.
+            state.world.growthPenalty = Math.min(15, (state.world.growthPenalty || 0) + 2.5);
             this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง");
         } else {
             state.world.stabilityPenalty = Math.min(50, (state.world.stabilityPenalty || 0) + 15);
