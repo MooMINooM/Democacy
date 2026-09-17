@@ -1,5 +1,6 @@
 export const TOTAL_SEATS = 500;
 export const MAJORITY_SEATS = 250;
+export const ELECTION_TERM_DAYS = 1460; // one 4-year parliamentary term
 
 export const FACTION_DATA = [
     { name: "กองทัพ", weight: 80, wealth: 70, basePop: 300000, icon: "fa-shield-halved" },
