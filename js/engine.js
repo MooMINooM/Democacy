@@ -2,6 +2,21 @@ import { state } from './state.js';
 import * as Data from './data.js';
 import { ui } from './ui.js';
 
+// Long Campaign (Phase 7): government-only gate for the discretionary, treasury/cabinet-spending
+// actions (investProvince, investMilitary, tradeDeal, appointMinister) -- these represent the
+// executive actually running the state, which only means anything while the player's party
+// holds government. Parliamentary actions that execute regardless of who proposed them
+// (finalizeVote's own budget spend, processQuidProQuo) are not gated here: those represent
+// whichever coalition currently governs carrying out a bill that already passed, not the player
+// personally reaching into the treasury.
+function requireGovernment(actionLabel) {
+    if (state.player.party.status !== "Government") {
+        alert(`เฉพาะพรรครัฐบาลเท่านั้นที่${actionLabel}ได้ ตอนนี้พรรคท่านเป็น${state.player.party.status === "Opposition" ? "ฝ่ายค้าน" : "กลาง"} ลองสร้างฐานเสียงผ่านการลงพื้นที่หาเสียงแทน`);
+        return false;
+    }
+    return true;
+}
+
 function ideologiesConflict(a, b) {
     if (!a || !b) return false;
     const fromA = Data.IDEOLOGY_CONFLICTS[a] || [];
@@ -267,6 +282,10 @@ export const gameClock = {
             prov.modifiers = (prov.modifiers || []).filter(m => m.remaining > 0);
             prov.investmentLevel = Math.max(0, Math.min(100, prov.investmentLevel + (50 - prov.investmentLevel) * 0.003 * state.speed));
             prov.investSaturation = Math.max(0, (prov.investSaturation || 0) - 0.8 * state.speed);
+            // Long Campaign (Phase 7): only the diminishing-returns gauge decays here, same as
+            // investSaturation -- playerCampaignBoost itself banks up untouched until it's spent
+            // at the next election (runElection()), since it represents a whole term's grassroots effort.
+            prov.campaignSaturation = Math.max(0, (prov.campaignSaturation || 0) - 0.8 * state.speed);
         });
 
         state.factions.forEach(f => {
@@ -630,9 +649,16 @@ export const engine = {
         const legitimacyPressure = (state.world.transparency < 50 ? -0.15 : 0.05) + (state.world.cabinetStability < 40 ? -0.2 : 0.02);
         state.world.institutionalLegitimacy = Math.max(0, Math.min(100, state.world.institutionalLegitimacy + legitimacyPressure));
 
-        const positionIncome = { "นายกรัฐมนตรี": 20000000, "หัวหน้าพรรค": 12000000, "สส. เขต": 6000000 }[state.player.position] || 6000000;
+        // Long Campaign (Phase 7): the executive perks behind positionIncome only mean anything
+        // while the player's party actually holds government -- an ousted PM keeps their MP seat
+        // and title, not the ministerial-scale pay, which now also matters as the funding source
+        // for campaignProvince() while rebuilding from opposition.
+        const isGoverning = state.player.party.status === "Government";
+        const positionIncome = isGoverning
+            ? ({ "นายกรัฐมนตรี": 20000000, "หัวหน้าพรรค": 12000000, "สส. เขต": 6000000 }[state.player.position] || 6000000)
+            : 4000000;
         state.player.personalFunds += positionIncome;
-        this.addNews("รายรับประจำเดือน", `ท่านได้รับเงินเดือนและผลตอบแทนตำแหน่ง ฿${(positionIncome/1e6).toFixed(0)}M`);
+        this.addNews("รายรับประจำเดือน", `ท่านได้รับเงินเดือนและผลตอบแทนตำแหน่ง ฿${(positionIncome/1e6).toFixed(0)}M${!isGoverning ? ' (ค่าตอบแทน สส. ฝ่ายค้าน)' : ''}`);
 
         // Trust slowly drifts back toward neutral each month, so grudges/goodwill fade but don't vanish instantly
         state.leaders.forEach(l => { l.trust = l.trust + (50 - l.trust) * 0.1; });
@@ -842,6 +868,7 @@ export const engine = {
     },
 
     tradeDeal(countryId) {
+        if (!requireGovernment("ลงนามข้อตกลงการค้าระดับชาติ")) return;
         const c = state.foreign.find(x => x.id === countryId);
         const cost = 1.5e10;
         if (c.relation < 40) { alert("ความสัมพันธ์ยังไม่ดีพอสำหรับข้อตกลงการค้า (ต้องการ Relation 40%+)"); return; }
@@ -865,6 +892,7 @@ export const engine = {
     // National-level counterpart to investProvince(): spends budget to push the military
     // readiness stat up via the same decaying-modifier channel every other world stat uses.
     investMilitary() {
+        if (!requireGovernment("เพิ่มงบประมาณกองทัพ")) return;
         const cost = 1.5e10;
         if (state.world.nationalBudget < cost) { alert(`งบประเทศไม่พอ (ต้องการ ฿${(cost/1e9).toFixed(1)}B)`); return; }
         state.world.nationalBudget -= cost;
@@ -919,6 +947,7 @@ export const engine = {
     // more and resets investmentLevel low, since a province starting a new industry from
     // scratch hasn't built up the same capacity yet.
     investProvince(name, targetIndustry) {
+        if (!requireGovernment("ใช้งบประมาณแผ่นดินลงทุนพัฒนาพื้นที่")) return;
         const prov = state.provinces.find(p => p.name === name);
         const isShift = targetIndustry && targetIndustry !== prov.industry;
         if (isShift) {
@@ -950,6 +979,25 @@ export const engine = {
         ui.updateMain(); ui.showProvinceDetail(prov.name);
     },
 
+    // Long Campaign (Phase 7): investProvince()'s counterpart for whenever the player's party
+    // doesn't hold the treasury -- personal funds instead of the national budget, and the payoff
+    // is a banked electoral bonus in this specific province (spent at the next runElection(),
+    // then reset to 0) instead of investmentLevel/production. Available regardless of government
+    // status: a government party campaigns too, but it's the only lever an opposition player has
+    // to "build a new base" the blueprint calls for. Same diminishing-returns pattern as every
+    // other repeatable action (campaignSaturation decays in tick(), the boost itself doesn't).
+    campaignProvince(name) {
+        const prov = state.provinces.find(p => p.name === name);
+        const cost = 5000000;
+        if (state.player.personalFunds < cost) { alert(`เงินส่วนตัวไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        state.player.personalFunds -= cost;
+        const satMultiplier = 1 - (prov.campaignSaturation || 0) / 100;
+        prov.playerCampaignBoost = Math.min(40, (prov.playerCampaignBoost || 0) + 8 * satMultiplier);
+        prov.campaignSaturation = Math.min(100, (prov.campaignSaturation || 0) + 30);
+        this.addNews(`ลงพื้นที่หาเสียง${prov.name}`, `${state.player.party.name}เดินสายพบประชาชนใน${prov.name}เพื่อสร้างฐานเสียงสำหรับการเลือกตั้งครั้งหน้า`);
+        ui.updateMain(); ui.showProvinceDetail(prov.name);
+    },
+
     runElection() {
         gameClock.setSpeed(0); ui.resetModalState();
 
@@ -972,7 +1020,11 @@ export const engine = {
             const weights = state.parties.map(p => {
                 const bonus = affinity && p.ideologies.includes(affinity) ? 25 : 0;
                 const govBonus = p.status === "Government" ? investmentSwing : 0;
-                return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + (Math.random() * 10 - 5)) };
+                // Long Campaign (Phase 7): a term's worth of campaignProvince() visits pays off
+                // here, the same way pork-barrel investment does for whoever's in government --
+                // the one electoral lever available to the player regardless of party status.
+                const campaignBonus = p.id === state.player.party.id ? (prov.playerCampaignBoost || 0) : 0;
+                return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + campaignBonus + (Math.random() * 10 - 5)) };
             });
             const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
             const provinceResult = {};
@@ -988,6 +1040,8 @@ export const engine = {
 
         const results = state.parties.map(p => ({ party: p, seats: seatsWon[p.id], prevSeats: prevSeats[p.id], prevStatus: p.status }));
         results.forEach(r => { r.party.seats = r.seats; });
+        // Spent: this term's campaign effort only ever pays off once, at this election.
+        state.provinces.forEach(p => { p.playerCampaignBoost = 0; });
 
         this.assignGovernmentStatus(state.parties);
         Object.values(Data.MINISTRIES).forEach(m => { m.currentMinister = null; }); // new term, new cabinet to appoint
@@ -1006,19 +1060,25 @@ export const engine = {
             </div>
         `).join('');
 
+        // Long Campaign (Phase 7): losing government used to end the game outright
+        // (location.reload()) -- the blueprint calls this out directly as a design mistake.
+        // The player's own MP prestige/trust, faction approval, institutionalLegitimacy and news
+        // history all carry over untouched into the new term; only cabinet posts and this term's
+        // spent campaign effort reset, same as they would for a winning term too.
         document.getElementById('event-title').innerText = "ผลการเลือกตั้งทั่วไป";
         document.getElementById('event-desc').innerHTML = `
             <div class="text-center mb-4">
                 <div class="text-2xl font-black uppercase tracking-widest ${won ? 'text-emerald-700' : 'text-red-700'}">${won ? 'พรรคท่านจัดตั้งรัฐบาลต่อ' : 'พรรคท่านหลุดจากอำนาจ'}</div>
+                ${!won ? `<div class="text-xs text-stone-500 mt-2">พรรคท่านเป็น${state.player.party.status === "Opposition" ? "ฝ่ายค้าน" : "กลาง"}ในสมัยนี้ -- ลงพื้นที่หาเสียงและสร้างฐานใหม่เพื่อกลับมาสมัยหน้า</div>` : ''}
             </div>
             <div class="text-left max-h-[320px] overflow-y-auto scroll-custom">${rows}</div>
         `;
         document.getElementById('event-options').innerHTML = won
             ? `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:opacity-90">เริ่มสมัยประชุมใหม่</button>`
-            : `<button onclick="location.reload()" class="w-full p-4 bg-red-700 text-white font-bold border-2 border-black text-lg hover:opacity-90">จบเกม</button>`;
+            : `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1); ui.updateMain();" class="w-full p-4 bg-red-700 text-white font-bold border-2 border-black text-lg hover:opacity-90">เข้าสู่ฝ่ายค้าน</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
         ui.renderCabinet(); ui.renderMinistryList(); ui.renderParliament(); ui.renderProvinceMap();
-        this.addNews("ผลการเลือกตั้งทั่วไปประกาศแล้ว", won ? "พรรคท่านยังคงจัดตั้งรัฐบาลได้ต่อไป" : "พรรคท่านไม่สามารถจัดตั้งรัฐบาลได้ในสมัยนี้");
+        this.addNews("ผลการเลือกตั้งทั่วไปประกาศแล้ว", won ? "พรรคท่านยังคงจัดตั้งรัฐบาลได้ต่อไป" : "พรรคท่านไม่สามารถจัดตั้งรัฐบาลได้ในสมัยนี้ และจะทำหน้าที่ฝ่ายค้านในสภาชุดใหม่");
     },
 
     triggerNoConfidence() {
@@ -1031,7 +1091,7 @@ export const engine = {
     },
 
     runNoConfidenceVote() {
-        let yes = 0, no = 0; 
+        let yes = 0, no = 0;
         state.leaders.forEach(mp => {
             let score = state.factions.find(fx => fx.name === mp.status)?.approval || 50;
             if(mp.party.status === "Opposition") score -= 40; if(mp.party.status === "Government") score += 30;
@@ -1042,10 +1102,26 @@ export const engine = {
         });
         document.getElementById('vote-count-yes').innerText = yes; document.getElementById('vote-count-no').innerText = no;
         const ousted = yes > Data.MAJORITY_SEATS;
-        document.getElementById('event-options').innerHTML = ousted ? `<button onclick="location.reload()" class="w-full p-4 bg-black rounded-xl text-white font-sans">จบเกม</button>` : `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-4 bg-zinc-700 rounded-xl text-white font-sans">บริหารต่อ</button>`;
+        // Long Campaign (Phase 7): being ousted mid-term used to end the game (location.reload()).
+        // Now the PM's own party is forced into Opposition -- seats don't change, so letting
+        // assignGovernmentStatus() run on the full list would just hand government straight back
+        // to whoever still holds the most seats -- and a new coalition is picked from everyone
+        // else, same anchor-then-fill logic assignGovernmentStatus() already uses for elections.
+        if (ousted) {
+            state.player.party.status = "Opposition";
+            this.assignGovernmentStatus(state.parties.filter(p => p.id !== state.player.party.id));
+            Object.values(Data.MINISTRIES).forEach(m => { m.currentMinister = null; });
+            state.activePolicies = [];
+            state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
+            this.addNews("รัฐบาลพ่ายมติไม่ไว้วางใจ", `${state.player.party.name}หลุดจากอำนาจกลางสมัยประชุม สภาจัดตั้งรัฐบาลใหม่จากเสียงที่เหลือ`);
+        }
+        document.getElementById('event-options').innerHTML = ousted
+            ? `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1); ui.updateMain(); ui.renderCabinet(); ui.renderMinistryList(); ui.renderParliament();" class="w-full p-4 bg-black rounded-xl text-white font-sans">เข้าสู่ฝ่ายค้าน</button>`
+            : `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-4 bg-zinc-700 rounded-xl text-white font-sans">บริหารต่อ</button>`;
     },
 
     appointMinister(mName, lId) {
+        if (!requireGovernment("แต่งตั้งคณะรัฐมนตรี")) return;
         const l = state.leaders.find(x => x.id === lId);
         if (!l) return;
         Data.MINISTRIES[mName].currentMinister = l;

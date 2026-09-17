@@ -45,6 +45,16 @@ export const ui = {
         };
         for (const [id, val] of Object.entries(els)) { const el = document.getElementById(id); if(el) el.innerText = val; }
         const bar = document.getElementById('hud-approval-bar'); if (bar) bar.style.width = `${state.world.approval}%`;
+        // Long Campaign (Phase 7): always visible so the player knows at a glance which toolkit
+        // they currently have -- the government-only buttons elsewhere explain themselves when
+        // clicked, but this is the one place that's true before they even try.
+        const statusEl = document.getElementById('hud-gov-status');
+        if (statusEl && state.player.party) {
+            const STATUS_LABELS = { Government: ["รัฐบาล", "bg-black text-white"], Opposition: ["ฝ่ายค้าน", "bg-red-700 text-white"], Neutral: ["กลาง", "bg-stone-200 text-black"] };
+            const [label, cls] = STATUS_LABELS[state.player.party.status] || STATUS_LABELS.Neutral;
+            statusEl.textContent = label;
+            statusEl.className = `text-[10px] font-bold uppercase tracking-widest px-2 py-1 border-2 border-black ${cls}`;
+        }
         // Explainability (Phase 2): a small trend arrow next to the numbers that already have a
         // "why" breakdown, so the player sees direction before even opening it.
         const trends = { 'hud-approval-trend': 'approval', 'stat-cabinet-stability-trend': 'cabinetStability', 'stat-growth-trend': 'growth' };
@@ -299,9 +309,9 @@ export const ui = {
                             : `<div class="text-stone-400 italic">-- ว่าง --</div>`}
                     </td>
                     <td class="p-3 text-right">
-                        <button onclick="ui.showAppointModal('${n}')" class="border border-black px-2 py-1 hover:bg-black hover:text-white transition text-[9px] font-bold uppercase">
-                            ${m ? 'Change' : 'Appoint'}
-                        </button>
+                        ${state.player.party.status === "Government"
+                            ? `<button onclick="ui.showAppointModal('${n}')" class="border border-black px-2 py-1 hover:bg-black hover:text-white transition text-[9px] font-bold uppercase">${m ? 'Change' : 'Appoint'}</button>`
+                            : `<span class="text-[9px] text-stone-400 italic" title="ต้องเป็นพรรครัฐบาลก่อนจึงจะแต่งตั้งได้">ฝ่ายค้านไม่มีอำนาจแต่งตั้ง</span>`}
                     </td>
                 </tr>
             `;
@@ -494,6 +504,7 @@ export const ui = {
                 ${tradePartner ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${tradePartner.icon} mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">${tradePartner.name} (${tradePartner.relation.toFixed(0)}%)</span></div>` : ''}
                 ${isLogistics ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas fa-earth-asia mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">ทุกประเทศเฉลี่ย (${avgTradeRelation.toFixed(0)}%)</span></div>` : ''}
             </div>
+            ${state.player.party.status === "Government" ? `
             <div class="mt-4 pt-3 border-t-2 border-black">
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-1"><span>ระดับการลงทุน</span><span>${investLevel.toFixed(0)}%</span></div>
                 <div class="w-full h-2 bg-stone-200 border border-black mb-2"><div class="h-full bg-emerald-600" style="width:${investLevel}%"></div></div>
@@ -512,7 +523,16 @@ export const ui = {
                         </button>`;
                     }).join('')}
                 </div>
-            </div>
+            </div>` : `
+            <div class="mt-4 pt-3 border-t-2 border-black">
+                <div class="text-[9px] text-stone-500 mb-3 leading-relaxed">พรรคท่านไม่ได้เป็นรัฐบาล จึงไม่มีอำนาจใช้งบประเทศพัฒนาอุตสาหกรรมในพื้นที่นี้ -- ใช้เงินส่วนตัวลงพื้นที่หาเสียงแทน เพื่อสะสมคะแนนไว้ใช้ตอนเลือกตั้งครั้งหน้า</div>
+                <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-1"><span>คะแนนหาเสียงสะสม (ใช้ตอนเลือกตั้งครั้งหน้า)</span><span>${(p.playerCampaignBoost || 0).toFixed(0)}/40</span></div>
+                <div class="w-full h-2 bg-stone-200 border border-black mb-3"><div class="h-full bg-red-600" style="width:${((p.playerCampaignBoost || 0) / 40) * 100}%"></div></div>
+                <button onclick="engine.campaignProvince('${p.name}')" class="w-full flex items-center justify-between py-2 px-3 text-[10px] font-bold border-2 border-black uppercase transition bg-white hover:bg-stone-100">
+                    <span><i class="fas fa-bullhorn mr-1.5"></i>ลงพื้นที่หาเสียง${(p.campaignSaturation || 0) > 0 ? ` (ผลเหลือ ${(100 - (p.campaignSaturation || 0)).toFixed(0)}%)` : ''}</span>
+                    <span>฿5M (ส่วนตัว)</span>
+                </button>
+            </div>`}
             ${p.lastResult ? `
             <div class="mt-4 pt-3 border-t-2 border-black">
                 <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2">ผลเลือกตั้งล่าสุดในจังหวัดนี้</div>
@@ -721,7 +741,7 @@ export const ui = {
         return `<div class="w-6 h-6 bg-stone-100 border border-stone-300 flex items-center justify-center text-xs" title="${title}"><i class="fas ${iconClass} text-stone-600"></i></div>`;
     },
 
-    showAppointModal(mName) { this.resetModalState(); let h = `<div class="space-y-2 max-h-[400px] overflow-y-auto scroll-custom p-1">`; const govtParties = state.parties.filter(p => p.status === "Government"); govtParties.forEach(p => { const list = state.leaders.filter(l => l.party.id === p.id); list.forEach(l => { h += `<div class="flex justify-between items-center p-3 border border-stone-200 bg-white hover:border-black transition"><div class="flex items-center gap-3"><div class="w-2 h-2 rounded-full" style="background:${p.color}"></div><div><div class="font-bold text-xs">${l.name}</div><div class="text-[9px] text-stone-500 uppercase">${p.name} · ชื่อเสียง ${l.prestige}%</div></div></div><button onclick="engine.appointMinister('${mName}', ${l.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="border border-black px-3 py-1 text-[9px] font-bold uppercase hover:bg-black hover:text-white transition">Select</button></div>`; }); }); h += `</div>`; document.getElementById('event-title').innerText = `Appoint Minister: ${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 border border-black font-bold text-xs uppercase hover:bg-stone-300">Cancel</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
+    showAppointModal(mName) { if (state.player.party.status !== "Government") return; this.resetModalState(); let h = `<div class="space-y-2 max-h-[400px] overflow-y-auto scroll-custom p-1">`; const govtParties = state.parties.filter(p => p.status === "Government"); govtParties.forEach(p => { const list = state.leaders.filter(l => l.party.id === p.id); list.forEach(l => { h += `<div class="flex justify-between items-center p-3 border border-stone-200 bg-white hover:border-black transition"><div class="flex items-center gap-3"><div class="w-2 h-2 rounded-full" style="background:${p.color}"></div><div><div class="font-bold text-xs">${l.name}</div><div class="text-[9px] text-stone-500 uppercase">${p.name} · ชื่อเสียง ${l.prestige}%</div></div></div><button onclick="engine.appointMinister('${mName}', ${l.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="border border-black px-3 py-1 text-[9px] font-bold uppercase hover:bg-black hover:text-white transition">Select</button></div>`; }); }); h += `</div>`; document.getElementById('event-title').innerText = `Appoint Minister: ${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 border border-black font-bold text-xs uppercase hover:bg-stone-300">Cancel</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
     
     // Keeping other modals from previous context, applying "border-black" style where simple strings are used.
     showPartyAdjustModal(type) { this.resetModalState(); const pool = type === 'ideology' ? Data.IDEOLOGY_POOL : Data.GOAL_POOL; let h = `<div class="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-2 scroll-custom">`; pool.forEach(item => { h += `<div class="bg-white border border-stone-300 p-2 flex justify-between items-center hover:border-black transition"><span class="font-bold text-xs text-black">${item}</span><button onclick="engine.adjustStance('${type}', '${item}'); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="bg-black text-white px-2 py-1 text-[9px] font-bold hover:bg-stone-700 uppercase">Select</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `Change Party ${type}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-modal').classList.remove('hidden'); },
