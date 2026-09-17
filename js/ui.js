@@ -675,7 +675,5 @@ export const ui = {
     },
     showPolicyBank(mName) { this.resetModalState(); const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName); let h = `<div class="grid grid-cols-1 gap-2">`; if (filtered.length === 0) h += `<div class="italic text-stone-400 text-center">No drafts available</div>`; else filtered.forEach(p => { h += `<div class="border border-black p-3 hover:bg-stone-50 transition flex justify-between items-center"><div><div class="font-bold text-sm">${p.name}</div><div class="text-[10px] font-mono">฿${(p.cost/1e9).toFixed(1)}B</div></div><button onclick="engine.propose('${p.name}', 'รัฐบาล')" class="bg-black text-white text-[9px] font-bold px-3 py-1 uppercase">Draft</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `Drafts: ${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
     
-    renderAI() { /* Placeholder */ },
-    
     resetModalState() { document.getElementById('voting-display').classList.add('hidden'); document.getElementById('stakeholder-reactions').classList.add('hidden'); document.getElementById('event-options').innerHTML = ""; document.getElementById('event-desc').innerHTML = ""; }
 };
