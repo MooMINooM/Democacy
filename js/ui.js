@@ -200,11 +200,11 @@ export const ui = {
             el.innerHTML = `
                 <div class="flex justify-between items-start mb-2">
                     <div class="font-bold text-lg serif text-black">${p.name}</div>
-                    ${p.isDeliberating 
-                        ? `<span class="bg-yellow-100 text-yellow-800 text-[9px] font-bold px-2 py-1 border border-yellow-500">รอพิจารณา ${p.remainingDays} วัน</span>` 
-                        : `<span class="bg-red-600 text-white text-[9px] font-bold px-2 py-1 border border-black animate-pulse">รอลงมติ</span>`}
+                    ${p.isDeliberating
+                        ? `<span class="bg-yellow-100 text-yellow-800 text-[9px] font-bold px-2 py-1 border border-yellow-500">วาระ ${p.stage}/3 &middot; รอพิจารณา ${p.remainingDays} วัน</span>`
+                        : `<span class="bg-red-600 text-white text-[9px] font-bold px-2 py-1 border border-black animate-pulse">วาระ ${p.stage}/3 &middot; รอลงมติ</span>`}
                 </div>
-                <div class="text-[10px] text-stone-500 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">เสนอโดย: ${p.proposer}</div>
+                <div class="text-[10px] text-stone-500 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">เสนอโดย: ${p.proposer} &middot; แพ้โหวตวาระนี้ร่างจะตกทันที</div>
                 
                 <div class="w-full bg-stone-200 h-2 border border-black mb-3"><div class="h-full bg-black" style="width: ${progress}%"></div></div>
 
@@ -641,15 +641,17 @@ export const ui = {
     },
     
     // ... Keeping other specific modal logic (Vote Interface etc) consistent with style ...
-    showVoteInterface(pName) { const p = state.activePolicies.find(x => x.name === pName); gameClock.setSpeed(0); this.resetModalState(); document.getElementById('event-title').innerText = `Parliament Vote`; document.getElementById('event-desc').innerHTML = `<div class="text-center font-serif text-2xl font-bold border-y-2 border-black py-4 my-4">${p.name}</div><div class="text-center text-xs uppercase tracking-widest text-stone-500">แนวคิด: ${p.ideology} · เป้าหมาย: ${p.goal} · กลุ่มเป้าหมาย: ${p.target}</div>`; document.getElementById('voting-display').classList.remove('hidden'); document.getElementById('event-options').innerHTML = `<button onclick="window.engine.runVote('${p.name}')" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:bg-stone-800">Start Voting</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
+    showVoteInterface(pName) { const p = state.activePolicies.find(x => x.name === pName); gameClock.setSpeed(0); this.resetModalState(); document.getElementById('event-title').innerText = `Parliament Vote`; document.getElementById('event-desc').innerHTML = `<div class="text-center font-serif text-2xl font-bold border-y-2 border-black py-4 my-4">${p.name}</div><div class="text-center text-xs uppercase tracking-widest text-stone-500">วาระที่ ${p.stage}/3 &middot; แนวคิด: ${p.ideology} · เป้าหมาย: ${p.goal} · กลุ่มเป้าหมาย: ${p.target}</div><div class="text-center text-[10px] text-red-700 mt-2">แพ้โหวตครั้งนี้ ร่างจะตกทันที ไม่มีสิทธิ์แก้ตัว</div>`; document.getElementById('voting-display').classList.remove('hidden'); document.getElementById('event-options').innerHTML = `<button onclick="window.engine.runVote('${p.name}')" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:bg-stone-800">Start Voting</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
 
     displayResults(p, yes, no) {
         document.getElementById('vote-count-yes').innerText = yes;
         document.getElementById('vote-count-no').innerText = no;
         const passed = yes > no;
+        const outcomeNote = !passed ? "ร่างตกไป" : (p.stage < 3 ? `ผ่านวาระ ${p.stage}/3 เข้าสู่วาระ ${p.stage + 1} ต่อไป` : "ผ่านวาระสุดท้าย บังคับใช้เป็นกฎหมายทันที");
         document.getElementById('event-desc').innerHTML = `
             <div class="text-center font-serif text-2xl font-bold border-y-2 border-black py-4 my-4">${p.name}</div>
             <div class="text-center text-lg font-black uppercase tracking-widest ${passed ? 'text-emerald-700' : 'text-red-700'}">${passed ? 'มติผ่าน' : 'มติไม่ผ่าน'}</div>
+            <div class="text-center text-xs text-stone-500 mt-1">${outcomeNote}</div>
         `;
         document.getElementById('event-options').innerHTML = `<button onclick="window.engine.finalizeVote('${p.name}', ${passed})" class="w-full p-4 ${passed ? 'bg-black' : 'bg-red-700'} text-white font-bold border-2 border-black text-lg hover:opacity-90">รับทราบผล</button>`;
     },
