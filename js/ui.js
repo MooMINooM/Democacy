@@ -410,7 +410,7 @@ export const ui = {
                     <div class="font-mono text-xs font-bold bg-stone-100 px-3 py-1 border border-stone-300">Page ${this.mpListPage}/${totalPages}</div>
                 </div>
                 
-                <div class="flex-1 overflow-y-auto p-6 scroll-custom bg-[url('https://www.transparenttextures.com/patterns/cardboard.png')]">
+                <div class="flex-1 overflow-y-auto p-6 scroll-custom paper-texture">
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         ${currentMps.map(l => this.createMPCard(l)).join('')}
                     </div>
