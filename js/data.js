@@ -150,13 +150,25 @@ export const MINISTRIES = {
 };
 
 export const POLICY_TEMPLATES = [
-    { ministry: "เกษตรและสหกรณ์", name: "โครงการประกันราคาพืชผล", cost: 8e10, delibTime: 30, cooldown: 90, ideology: "ประชานิยม", goal: "การเกษตร", target: "เกษตรกร", impact: { "เกษตรกร": 20, "นายทุน": -10 } },
-    { ministry: "เกษตรและสหกรณ์", name: "ธนาคารน้ำใต้ดินทั่วไทย", cost: 1.5e10, delibTime: 40, cooldown: 100, ideology: "เทคโนแครต", goal: "การอนุรักษ์ทรัพยากร", target: "เกษตรกร", impact: { "เกษตรกร": 15, "สิ่งแวดล้อม": 10 } },
-    { ministry: "การคลัง", name: "ภาษีเงินได้อัตราก้าวหน้า", cost: 0, delibTime: 60, cooldown: 180, ideology: "สังคมนิยม", goal: "คุณภาพชีวิต", target: "หัวก้าวหน้า", impact: { "นายทุน": -30, "หัวก้าวหน้า": 20 } },
-    { ministry: "กลาโหม", name: "จัดซื้อเครื่องบินขับไล่", cost: 2.5e10, delibTime: 40, cooldown: 150, ideology: "ชาตินิยม", goal: "การทหาร", target: "กองทัพ", impact: { "กองทัพ": 25, "เด็กรุ่นใหม่": -25 } },
-    { ministry: "คมนาคม", name: "รถไฟฟ้าความเร็วสูง", cost: 1.2e11, delibTime: 90, cooldown: 200, ideology: "โลกาภิวัตน์", goal: "เศรษฐกิจ", target: "ชนชั้นกลาง", impact: { "ชนชั้นกลาง": 20, "สิ่งแวดล้อม": -5 } },
-    { ministry: "การต่างประเทศ", name: "เข้าร่วมกรอบการค้าเสรีระดับภูมิภาค", cost: 5e9, delibTime: 45, cooldown: 120, ideology: "โลกาภิวัตน์", goal: "การต่างประเทศ", target: "ทุนข้ามชาติ", impact: { "ทุนข้ามชาติ": 15, "ท้องถิ่น": -8 } }
+    { ministry: "เกษตรและสหกรณ์", name: "โครงการประกันราคาพืชผล", cost: 8e10, delibTime: 30, cooldown: 90, ideology: "ประชานิยม", goal: "การเกษตร", target: "เกษตรกร", impact: { "เกษตรกร": 20, "นายทุน": -10 }, worldImpact: { unemployment: -3, crime: -2 } },
+    { ministry: "เกษตรและสหกรณ์", name: "ธนาคารน้ำใต้ดินทั่วไทย", cost: 1.5e10, delibTime: 40, cooldown: 100, ideology: "เทคโนแครต", goal: "การอนุรักษ์ทรัพยากร", target: "เกษตรกร", impact: { "เกษตรกร": 15, "สิ่งแวดล้อม": 10 }, worldImpact: { environment: 8, unemployment: -2 } },
+    { ministry: "การคลัง", name: "ภาษีเงินได้อัตราก้าวหน้า", cost: 0, delibTime: 60, cooldown: 180, ideology: "สังคมนิยม", goal: "คุณภาพชีวิต", target: "หัวก้าวหน้า", impact: { "นายทุน": -30, "หัวก้าวหน้า": 20 }, worldImpact: { crime: -5, unemployment: 2 } },
+    { ministry: "กลาโหม", name: "จัดซื้อเครื่องบินขับไล่", cost: 2.5e10, delibTime: 40, cooldown: 150, ideology: "ชาตินิยม", goal: "การทหาร", target: "กองทัพ", impact: { "กองทัพ": 25, "เด็กรุ่นใหม่": -25 }, worldImpact: { education: -3, unemployment: -1 } },
+    { ministry: "คมนาคม", name: "รถไฟฟ้าความเร็วสูง", cost: 1.2e11, delibTime: 90, cooldown: 200, ideology: "โลกาภิวัตน์", goal: "เศรษฐกิจ", target: "ชนชั้นกลาง", impact: { "ชนชั้นกลาง": 20, "สิ่งแวดล้อม": -5 }, worldImpact: { unemployment: -6, environment: -4 } },
+    { ministry: "การต่างประเทศ", name: "เข้าร่วมกรอบการค้าเสรีระดับภูมิภาค", cost: 5e9, delibTime: 45, cooldown: 120, ideology: "โลกาภิวัตน์", goal: "การต่างประเทศ", target: "ทุนข้ามชาติ", impact: { "ทุนข้ามชาติ": 15, "ท้องถิ่น": -8 }, worldImpact: { unemployment: -4 } },
+    { ministry: "สาธารณสุข", name: "หลักประกันสุขภาพถ้วนหน้า", cost: 6e10, delibTime: 50, cooldown: 150, ideology: "สังคมนิยม", goal: "สาธารณสุข", target: "แรงงาน", impact: { "แรงงาน": 15, "นายทุน": -15 }, worldImpact: { health: 12, crime: -3 } },
+    { ministry: "ศึกษาธิการ", name: "ปฏิรูปหลักสูตรการศึกษาแห่งชาติ", cost: 3e10, delibTime: 60, cooldown: 150, ideology: "หัวก้าวหน้า", goal: "การศึกษา", target: "เด็กรุ่นใหม่", impact: { "เด็กรุ่นใหม่": 20, "อนุรักษ์": -10 }, worldImpact: { education: 15, unemployment: -2 } }
 ];
+
+// The 5 stats a policy's worldImpact can move, each on a 0-100 index and drifting back
+// toward its baseline over time (like faction/party trust does) unless a policy keeps pushing it.
+export const WORLD_STAT_META = {
+    unemployment: { label: "การว่างงาน", icon: "fa-person-circle-exclamation", baseline: 20, goodDirection: -1 },
+    crime: { label: "อาชญากรรม", icon: "fa-handcuffs", baseline: 35, goodDirection: -1 },
+    health: { label: "สาธารณสุข", icon: "fa-heart-pulse", baseline: 60, goodDirection: 1 },
+    education: { label: "การศึกษา", icon: "fa-graduation-cap", baseline: 55, goodDirection: 1 },
+    environment: { label: "สิ่งแวดล้อม", icon: "fa-leaf", baseline: 55, goodDirection: 1 }
+};
 
 // The 6 conventional regions of Thailand, in the order the province map lays them out.
 export const REGIONS = ["เหนือ", "อีสาน", "กลาง", "ตะวันออก", "ตะวันตก", "ใต้"];
