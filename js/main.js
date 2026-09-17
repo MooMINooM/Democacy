@@ -52,6 +52,7 @@ const setup = {
             // Initialize Engine and UI
             engine.init();
             ui.updateMain();
+            ui.tab('map'); // land on the province map first
             gameClock.setSpeed(0); // Start paused so the player can read the situation first
             return;
         }

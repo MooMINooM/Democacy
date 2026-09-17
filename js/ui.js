@@ -20,6 +20,7 @@ export const ui = {
         if (t === 'party-hq') { this.renderPartyHQ(); }
         if (t === 'factions') { this.renderFactionList(); }
         if (t === 'foreign') { this.renderForeignList(); }
+        if (t === 'map') { this.renderProvinceMap(); }
 
         // MP List (Keep Logic)
         if (t === 'mps') {
@@ -278,6 +279,65 @@ export const ui = {
         ).join("");
         
         // Update transparency bar manually if needed (omitted for brevity, handled in main loop usually)
+    },
+
+    // --- PROVINCE MAP ---
+    renderProvinceMap() {
+        const cont = document.getElementById('province-map'); if (!cont) return;
+        const byRegion = {};
+        Data.REGIONS.forEach(r => byRegion[r] = state.provinces.filter(p => p.region === r));
+
+        const chip = (p) => {
+            const faction = state.factions.find(f => f.name === p.baseFaction);
+            const approval = faction ? faction.approval : 50;
+            const color = approval > 60 ? '#10b981' : (approval < 40 ? '#ef4444' : '#f59e0b');
+            const sizeClass = p.pop > 1200000 ? 'text-sm px-3 py-2' : (p.pop > 500000 ? 'text-xs px-2.5 py-1.5' : 'text-[10px] px-2 py-1');
+            return `<button onclick="ui.showProvinceDetail('${p.name}')" class="border-2 border-black font-bold ${sizeClass} bg-white hover:-translate-y-0.5 transition shadow-[2px_2px_0_#000] hover:shadow-[3px_3px_0_#000]" style="border-left: 6px solid ${color}">${p.name}</button>`;
+        };
+
+        const regionBlock = (name) => `
+            <div class="bg-stone-50 border-2 border-black p-3">
+                <div class="flex justify-between items-center mb-2 border-b-2 border-black pb-1">
+                    <span class="font-black text-xs uppercase tracking-widest">${name}</span>
+                    <span class="text-[10px] font-mono text-stone-500">${byRegion[name].length} จังหวัด · ${byRegion[name].reduce((s,p)=>s+p.seats,0)} ที่นั่ง</span>
+                </div>
+                <div class="flex flex-wrap gap-1.5">${byRegion[name].map(chip).join('')}</div>
+            </div>
+        `;
+
+        // Rough geographic mosaic: North/Northeast up top, West-Central-East in the middle band, South at the bottom
+        cont.innerHTML = `
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+                ${regionBlock("เหนือ")}
+                ${regionBlock("อีสาน")}
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
+                ${regionBlock("ตะวันตก")}
+                ${regionBlock("กลาง")}
+                ${regionBlock("ตะวันออก")}
+            </div>
+            <div class="grid grid-cols-1 gap-3">
+                ${regionBlock("ใต้")}
+            </div>
+        `;
+    },
+
+    showProvinceDetail(name) {
+        const p = state.provinces.find(x => x.name === name); if (!p) return;
+        const faction = state.factions.find(f => f.name === p.baseFaction);
+        const approval = faction ? faction.approval : 50;
+        const approvalColor = approval > 60 ? 'text-emerald-700' : (approval < 40 ? 'text-red-700' : 'text-amber-700');
+        const cont = document.getElementById('province-detail'); if (!cont) return;
+        cont.innerHTML = `
+            <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-1">ภาค${p.region}</div>
+            <h3 class="serif text-2xl font-black mb-4 border-b-2 border-black pb-2">${p.name}</h3>
+            <div class="space-y-3 text-xs">
+                <div class="flex justify-between border-b border-stone-200 pb-1"><span>ประชากร</span><span class="font-mono font-bold">${(p.pop/1e6).toFixed(2)}M</span></div>
+                <div class="flex justify-between border-b border-stone-200 pb-1"><span>ที่นั่ง สส. เขต</span><span class="font-mono font-bold">${p.seats}</span></div>
+                <div class="flex justify-between border-b border-stone-200 pb-1"><span>ฐานเสียงหลัก</span><span class="font-bold">${p.baseFaction}</span></div>
+                <div class="flex justify-between border-b border-stone-200 pb-1"><span>Approval ฐานเสียง</span><span class="font-mono font-bold ${approvalColor}">${approval.toFixed(0)}%</span></div>
+            </div>
+        `;
     },
 
     // --- 5. FACTIONS (ปรับใหม่: Report Cards) ---
