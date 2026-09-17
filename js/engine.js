@@ -12,6 +12,18 @@ function ideologiesConflict(a, b) {
 // A faction's rough weight in the national economy: how many people, how well-off they are.
 function factionOutput(f) { return f.basePop * f.wealth; }
 
+// state.speed can advance the calendar by more than 1 day per tick, so periodic checks
+// (day-of-month triggers, month-boundary updates) must detect crossing a mark, not equal it exactly.
+function crossedMonthBoundary(prev, curr) {
+    return curr.getMonth() !== prev.getMonth() || curr.getFullYear() !== prev.getFullYear();
+}
+function crossedDayOfMonth(prev, curr, day) {
+    if (curr.getMonth() === prev.getMonth() && curr.getFullYear() === prev.getFullYear()) {
+        return prev.getDate() < day && curr.getDate() >= day;
+    }
+    return curr.getDate() >= day; // rolled into a new month already at/past `day`
+}
+
 export const gameClock = {
     toggle() { this.setSpeed(state.speed === 0 ? 1 : 0); },
     setSpeed(s) { 
@@ -21,14 +33,15 @@ export const gameClock = {
     },
     tick() {
         if (state.speed === 0) return;
-        state.date.setDate(state.date.getDate() + 1);
+        const prevDate = new Date(state.date);
+        state.date.setDate(state.date.getDate() + state.speed);
         Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; });
         state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
         state.world.stabilityPenalty = Math.max(0, (state.world.stabilityPenalty || 0) - 0.5 * state.speed);
         state.leaders.forEach(l => { if (l.switchCooldown > 0) l.switchCooldown -= state.speed; });
 
-        if(state.date.getDate() === 15 && Math.random() < 0.1) engine.aiPropose();
-        if(state.date.getDate() === 28 && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
+        if(crossedDayOfMonth(prevDate, state.date, 15) && Math.random() < 0.1) engine.aiPropose();
+        if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
            if(Math.random() < 0.05) engine.triggerNoConfidence();
         }
         if(Math.random() < 0.02) engine.triggerCrisis();
@@ -58,7 +71,23 @@ export const gameClock = {
             if (grudge) engine.triggerDiplomaticIncident(grudge);
         }
 
-        if (state.date.getDate() === 1) engine.processMonthlyUpdate();
+        state.parties.forEach(p => {
+            let target = p.status === "Government" ? state.world.approval : (p.status === "Opposition" ? 100 - state.world.approval : 50);
+            if (p.id === state.player.party.id) target += (state.world.transparency - 100) * 0.15;
+            p.popularity = Math.max(0, Math.min(100, p.popularity + (target - p.popularity) * 0.01 * state.speed + (Math.random() - 0.5) * 0.3 * state.speed));
+        });
+
+        if (crossedMonthBoundary(prevDate, state.date)) engine.processMonthlyUpdate();
+
+        const daysToElection = Math.round((state.world.electionDay - state.date) / 86400000);
+        const prevDaysToElection = Math.round((state.world.electionDay - prevDate) / 86400000);
+        [180, 90, 30, 7].forEach(threshold => {
+            if (prevDaysToElection > threshold && daysToElection <= threshold) {
+                engine.addNews(`นับถอยหลังเลือกตั้ง`, `เหลืออีก ${threshold} วันก่อนวันเลือกตั้งทั่วไป`);
+            }
+        });
+        if (state.date >= state.world.electionDay) engine.runElection();
+
         ui.updateMain();
     }
 };
@@ -68,43 +97,46 @@ export const engine = {
         state.voteModifier = null;
         state.world.transparency = 100;
         state.world.stabilityPenalty = 0;
+        state.world.electionDay = new Date(state.date);
+        state.world.electionDay.setDate(state.world.electionDay.getDate() + Data.ELECTION_TERM_DAYS);
         state.history = { approval: [], budget: [] };
-        state.lastVoteResults = null; 
-        state.lastVoteLog = []; 
+        state.lastVoteResults = null;
+        state.lastVoteLog = [];
 
         state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5), modifiers: [] }));
         state.foreign = Data.FOREIGN_POWERS.map(c => ({ ...c, relation: 50 + (Math.random() * 20 - 10), modifiers: [] }));
         if(state.parties.length === 0) state.parties = this.generateGameParties();
+        this.generateLeaders();
+
+        ui.renderCabinet(); ui.renderMinistryList();
+        this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
+        for(let i=0; i<6; i++) { state.history.approval.push(50); state.history.budget.push(state.world.nationalBudget); }
+        setInterval(() => gameClock.tick(), 1000);
+    },
+
+    // Fills state.leaders with fresh MPs matching each party's current seat count.
+    // Used at game start, and again after every election to seat the new parliament.
+    generateLeaders() {
         state.leaders = [];
         let nIdx = 0;
-        
-        // --- NEW: Generate MPs with 4 Dimensions ---
+        Data.ALL_MP_NAMES.sort(() => Math.random() - 0.5); // re-shuffle so a re-election doesn't hand out the same names in the same order
         state.parties.forEach(p => {
             for(let i=0; i<p.seats; i++) {
-                // Randomize 4 Traits
                 const ability = Data.ABILITY_POOL[Math.floor(Math.random() * Data.ABILITY_POOL.length)];
                 const socio = Data.SOCIO_POOL[Math.floor(Math.random() * Data.SOCIO_POOL.length)];
                 const ideology = Data.IDEOLOGY_POOL[Math.floor(Math.random() * Data.IDEOLOGY_POOL.length)];
                 const goal = Data.GOAL_POOL[Math.floor(Math.random() * Data.GOAL_POOL.length)];
-                
-                // Calculate Wealth based on Socio status
-                const cash = (socio.baseWealth * 1000000) + Math.floor(Math.random() * 5000000); 
+                const cash = (socio.baseWealth * 1000000) + Math.floor(Math.random() * 5000000);
 
                 state.leaders.push({
-                    id: state.leaders.length, 
+                    id: state.leaders.length,
                     name: Data.ALL_MP_NAMES[nIdx++] || `สส.นิรนาม ${state.leaders.length}`,
-                    party: p, 
+                    party: p,
                     status: i === 0 ? p.baseFaction : Data.FACTION_NAMES[Math.floor(Math.random()*17)],
-                    prestige: Math.floor(Math.random() * 100), 
-                    loyalty: 40 + Math.random() * 60, 
+                    prestige: Math.floor(Math.random() * 100),
+                    loyalty: 40 + Math.random() * 60,
                     isCobra: false,
-                    // 4 Key Traits
-                    trait: {
-                        ideology: ideology,
-                        goal: goal,
-                        ability: ability,
-                        socio: socio
-                    },
+                    trait: { ideology, goal, ability, socio },
                     conviction: Math.floor(Math.random() * 100),
                     trust: 50,
                     switchCooldown: 0,
@@ -112,10 +144,6 @@ export const engine = {
                 });
             }
         });
-        ui.renderCabinet(); ui.renderMinistryList();
-        this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
-        for(let i=0; i<6; i++) { state.history.approval.push(50); state.history.budget.push(state.world.nationalBudget); }
-        setInterval(() => gameClock.tick(), 1000);
     },
 
     generateGameParties() {
@@ -131,7 +159,7 @@ export const engine = {
                 ideologies: shuffle(Data.IDEOLOGY_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 goals: shuffle(Data.GOAL_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 baseFaction: Data.FACTION_NAMES[Math.floor(Math.random() * Data.FACTION_NAMES.length)],
-                status: "Opposition", seats: 0, trust: 70
+                status: "Opposition", seats: 0, trust: 70, popularity: 0
             });
         }
         let rSeats = Data.TOTAL_SEATS;
@@ -140,29 +168,37 @@ export const engine = {
             p.seats = Math.floor(s); rSeats -= p.seats;
         });
         pArr[0].seats += rSeats;
+        pArr.forEach(p => { p.popularity = Math.max(2, (p.seats / Data.TOTAL_SEATS) * 100 + (Math.random() * 10 - 5)); });
 
-        pArr[0].status = "Government";
-        let currentGovSeats = pArr[0].seats;
-        for(let i=1; i<pArr.length; i++) {
+        this.assignGovernmentStatus(pArr);
+        return pArr;
+    },
+
+    // Picks the largest party as the coalition anchor, adds non-conflicting parties until it
+    // clears a majority, then labels the rest Opposition/Neutral. Used for the initial parliament
+    // and to reseat government after every election.
+    assignGovernmentStatus(pArr) {
+        pArr.forEach(p => { p.status = "Opposition"; });
+        const sorted = [...pArr].sort((a, b) => b.seats - a.seats);
+        const anchor = sorted[0];
+        anchor.status = "Government";
+        let currentGovSeats = anchor.seats;
+        for (const p of sorted) {
+            if (p === anchor) continue;
             if (currentGovSeats > Data.MAJORITY_SEATS) break;
             let conflict = false;
-            pArr[i].ideologies.forEach(ideo => {
-                pArr[0].ideologies.forEach(govIdeo => { if (ideologiesConflict(ideo, govIdeo)) conflict = true; });
-            });
-            if (!conflict) { pArr[i].status = "Government"; currentGovSeats += pArr[i].seats; }
+            p.ideologies.forEach(ideo => { anchor.ideologies.forEach(govIdeo => { if (ideologiesConflict(ideo, govIdeo)) conflict = true; }); });
+            if (!conflict) { p.status = "Government"; currentGovSeats += p.seats; }
         }
         if (currentGovSeats <= Data.MAJORITY_SEATS) {
-            for(let i=1; i<pArr.length; i++) {
+            for (const p of sorted) {
                 if (currentGovSeats > Data.MAJORITY_SEATS) break;
-                if (pArr[i].status !== "Government") { pArr[i].status = "Government"; currentGovSeats += pArr[i].seats; }
+                if (p.status !== "Government") { p.status = "Government"; currentGovSeats += p.seats; }
             }
         }
-        for(let i=1; i<pArr.length; i++) {
-            if (pArr[i].status !== "Government") {
-                if (pArr[i].seats > 40 || Math.random() > 0.5) pArr[i].status = "Opposition"; else pArr[i].status = "Neutral";
-            }
+        for (const p of sorted) {
+            if (p.status !== "Government") p.status = (p.seats > 40 || Math.random() > 0.5) ? "Opposition" : "Neutral";
         }
-        return pArr;
     },
 
     addNews(h, b = "") { state.news.unshift({ date: state.date.toLocaleDateString('th-TH'), headline: h, body: b || "วิเคราะห์สถานการณ์วันนี้..." }); ui.renderNews(); },
@@ -415,6 +451,54 @@ export const engine = {
         c.relation = Math.max(0, c.relation - 5);
         this.addNews(`${c.name}กดดันทางการค้า`, `ความสัมพันธ์กับ${c.name}ทรุดหนักจนกระทบการค้าระหว่างประเทศ`);
         ui.updateMain(); ui.renderForeignList();
+    },
+
+    runElection() {
+        gameClock.setSpeed(0); ui.resetModalState();
+
+        // Largest-remainder method: floor each party's proportional share, then hand out
+        // the leftover seats to whoever's fractional remainder was biggest.
+        const totalPop = state.parties.reduce((s, p) => s + p.popularity, 0);
+        const quota = Data.TOTAL_SEATS / totalPop;
+        const results = state.parties.map(p => {
+            const exact = p.popularity * quota;
+            const seats = Math.floor(exact);
+            return { party: p, seats, remainder: exact - seats, prevSeats: p.seats, prevStatus: p.status };
+        });
+        let remaining = Data.TOTAL_SEATS - results.reduce((s, r) => s + r.seats, 0);
+        [...results].sort((a, b) => b.remainder - a.remainder).slice(0, remaining).forEach(r => r.seats++);
+        results.forEach(r => { r.party.seats = r.seats; });
+
+        this.assignGovernmentStatus(state.parties);
+        Object.values(Data.MINISTRIES).forEach(m => { m.currentMinister = null; }); // new term, new cabinet to appoint
+        state.activePolicies = [];
+        state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
+        this.generateLeaders();
+
+        const won = state.player.party.status === "Government";
+        state.world.electionDay = new Date(state.date);
+        state.world.electionDay.setDate(state.world.electionDay.getDate() + Data.ELECTION_TERM_DAYS);
+
+        const rows = results.sort((a, b) => b.seats - a.seats).map(r => `
+            <div class="flex justify-between items-center text-xs border-b border-stone-200 py-1.5">
+                <span class="flex items-center gap-2 font-bold"><span class="inline-block w-2 h-2 rounded-full border border-black" style="background:${r.party.color}"></span>${r.party.name}${r.party.id === state.player.party.id ? ' <span class="text-[9px] text-stone-500">(พรรคท่าน)</span>' : ''}</span>
+                <span class="font-mono">${r.prevSeats} → <span class="font-bold">${r.seats}</span> <span class="text-[9px] uppercase text-stone-500">${r.party.status}</span></span>
+            </div>
+        `).join('');
+
+        document.getElementById('event-title').innerText = "ผลการเลือกตั้งทั่วไป";
+        document.getElementById('event-desc').innerHTML = `
+            <div class="text-center mb-4">
+                <div class="text-2xl font-black uppercase tracking-widest ${won ? 'text-emerald-700' : 'text-red-700'}">${won ? 'พรรคท่านจัดตั้งรัฐบาลต่อ' : 'พรรคท่านหลุดจากอำนาจ'}</div>
+            </div>
+            <div class="text-left max-h-[320px] overflow-y-auto scroll-custom">${rows}</div>
+        `;
+        document.getElementById('event-options').innerHTML = won
+            ? `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:opacity-90">เริ่มสมัยประชุมใหม่</button>`
+            : `<button onclick="location.reload()" class="w-full p-4 bg-red-700 text-white font-bold border-2 border-black text-lg hover:opacity-90">จบเกม</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+        ui.renderCabinet(); ui.renderMinistryList(); ui.renderParliament();
+        this.addNews("ผลการเลือกตั้งทั่วไปประกาศแล้ว", won ? "พรรคท่านยังคงจัดตั้งรัฐบาลได้ต่อไป" : "พรรคท่านไม่สามารถจัดตั้งรัฐบาลได้ในสมัยนี้");
     },
 
     triggerNoConfidence() {

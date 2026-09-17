@@ -39,7 +39,8 @@ export const ui = {
             'hud-transparency-text': `${(state.world.transparency ?? 100).toFixed(0)}%`,
             'hud-personal-top': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`,
             'stat-cabinet-stability-display': `${state.world.cabinetStability}%`,
-            'stat-growth-sidebar': `${state.world.growth >= 0 ? '+' : ''}${state.world.growth.toFixed(1)}%`
+            'stat-growth-sidebar': `${state.world.growth >= 0 ? '+' : ''}${state.world.growth.toFixed(1)}%`,
+            'hud-election-countdown': state.world.electionDay ? `${Math.max(0, Math.ceil((state.world.electionDay - state.date) / 86400000))} วัน` : '-'
         };
         for (const [id, val] of Object.entries(els)) { const el = document.getElementById(id); if(el) el.innerText = val; }
         const bar = document.getElementById('hud-approval-bar'); if (bar) bar.style.width = `${state.world.approval}%`;
@@ -247,6 +248,7 @@ export const ui = {
                     <td class="p-3 text-center border-r border-stone-200 uppercase text-[9px] font-bold tracking-wider">${p.status}</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold">${p.seats}</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold ${p.id === state.player.party.id ? 'text-stone-400' : ((p.trust ?? 70) > 60 ? 'text-emerald-700' : ((p.trust ?? 70) < 40 ? 'text-red-700' : 'text-stone-700'))}">${p.id === state.player.party.id ? '-' : (p.trust ?? 70).toFixed(0) + '%'}</td>
+                    <td class="p-3 text-center border-r border-stone-200 font-mono font-bold">${(p.popularity ?? 0).toFixed(0)}%</td>
                     <td class="p-3 text-stone-500 italic border-r border-stone-200">${p.ideologies[0]}</td>
                     <td class="p-3 text-stone-500 italic">${p.goals[0]}</td>
                 </tr>
