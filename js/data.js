@@ -381,3 +381,17 @@ export const REGION_ELIGIBLE_INDUSTRIES = {
     "ตะวันตก": ["เกษตรกรรม", "การท่องเที่ยว", "โลจิสติกส์และการส่งออก"],
     "ใต้": ["เกษตรกรรม", "ประมง", "การท่องเที่ยว"]
 };
+
+// Dynamic Society (Phase 6): which of the 17 existing FACTIONS actually work each industry, and
+// what share of that industry's provincial population belongs to each -- no new factions, just
+// wiring the ones that already exist (เกษตรกร, แรงงาน, ชนชั้นกลาง, เทคโนแครต, ท้องถิ่น) to the
+// provincial industry mix so investing in one industry over another visibly grows the classes
+// that work there. Shares per industry sum to 1.
+export const FACTION_INDUSTRY_LINK = {
+    "เกษตรกรรม": { "เกษตรกร": 1.0 },
+    "ประมง": { "เกษตรกร": 0.7, "ท้องถิ่น": 0.3 },
+    "อุตสาหกรรม": { "แรงงาน": 0.8, "ชนชั้นกลาง": 0.2 },
+    "การท่องเที่ยว": { "แรงงาน": 0.5, "ท้องถิ่น": 0.5 },
+    "เทคโนโลยี": { "เทคโนแครต": 0.6, "ชนชั้นกลาง": 0.4 },
+    "โลจิสติกส์และการส่งออก": { "แรงงาน": 0.5, "ชนชั้นกลาง": 0.3, "ท้องถิ่น": 0.2 }
+};
