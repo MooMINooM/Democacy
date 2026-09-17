@@ -142,22 +142,25 @@ export const BACKGROUNDS = [
     { id: "military", name: "อดีตผู้นำเหล่าทัพ", desc: "เน้นระเบียบวินัยและความมั่นคง", traits: ["ทหาร +40", "ต้านคูป +50"] }
 ];
 
+// workload (Phase 4): builds up each time a bill from that ministry actually gets implemented,
+// decaying over time in gameClock.tick() -- represents the bureaucracy's limited throughput,
+// separate from whether the bill has a minister or the money to back it.
 export const MINISTRIES = {
-    "กลาโหม": { icon: "fa-shield-halved", currentMinister: null, cooldown: 0 },
-    "การคลัง": { icon: "fa-wallet", currentMinister: null, cooldown: 0 },
-    "การต่างประเทศ": { icon: "fa-earth-asia", currentMinister: null, cooldown: 0 },
-    "ท่องเที่ยวและกีฬา": { icon: "fa-person-skating", currentMinister: null, cooldown: 0 },
-    "เกษตรและสหกรณ์": { icon: "fa-wheat-awn", currentMinister: null, cooldown: 0 },
-    "คมนาคม": { icon: "fa-train-subway", currentMinister: null, cooldown: 0 },
-    "ดิจิทัล": { icon: "fa-laptop-code", currentMinister: null, cooldown: 0 },
-    "พลังงาน": { icon: "fa-bolt-lightning", currentMinister: null, cooldown: 0 },
-    "พาณิชย์": { icon: "fa-shop", currentMinister: null, cooldown: 0 },
-    "มหาดไทย": { icon: "fa-house-user", currentMinister: null, cooldown: 0 },
-    "ยุติธรรม": { icon: "fa-scale-balanced", currentMinister: null, cooldown: 0 },
-    "แรงงาน": { icon: "fa-hammer", currentMinister: null, cooldown: 0 },
-    "ศึกษาธิการ": { icon: "fa-graduation-cap", currentMinister: null, cooldown: 0 },
-    "สาธารณสุข": { icon: "fa-hospital", currentMinister: null, cooldown: 0 },
-    "อุตสาหกรรม": { icon: "fa-industry", currentMinister: null, cooldown: 0 }
+    "กลาโหม": { icon: "fa-shield-halved", currentMinister: null, cooldown: 0, workload: 0 },
+    "การคลัง": { icon: "fa-wallet", currentMinister: null, cooldown: 0, workload: 0 },
+    "การต่างประเทศ": { icon: "fa-earth-asia", currentMinister: null, cooldown: 0, workload: 0 },
+    "ท่องเที่ยวและกีฬา": { icon: "fa-person-skating", currentMinister: null, cooldown: 0, workload: 0 },
+    "เกษตรและสหกรณ์": { icon: "fa-wheat-awn", currentMinister: null, cooldown: 0, workload: 0 },
+    "คมนาคม": { icon: "fa-train-subway", currentMinister: null, cooldown: 0, workload: 0 },
+    "ดิจิทัล": { icon: "fa-laptop-code", currentMinister: null, cooldown: 0, workload: 0 },
+    "พลังงาน": { icon: "fa-bolt-lightning", currentMinister: null, cooldown: 0, workload: 0 },
+    "พาณิชย์": { icon: "fa-shop", currentMinister: null, cooldown: 0, workload: 0 },
+    "มหาดไทย": { icon: "fa-house-user", currentMinister: null, cooldown: 0, workload: 0 },
+    "ยุติธรรม": { icon: "fa-scale-balanced", currentMinister: null, cooldown: 0, workload: 0 },
+    "แรงงาน": { icon: "fa-hammer", currentMinister: null, cooldown: 0, workload: 0 },
+    "ศึกษาธิการ": { icon: "fa-graduation-cap", currentMinister: null, cooldown: 0, workload: 0 },
+    "สาธารณสุข": { icon: "fa-hospital", currentMinister: null, cooldown: 0, workload: 0 },
+    "อุตสาหกรรม": { icon: "fa-industry", currentMinister: null, cooldown: 0, workload: 0 }
 };
 
 export const POLICY_TEMPLATES = [

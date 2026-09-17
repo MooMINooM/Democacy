@@ -301,14 +301,18 @@ export const ui = {
         });
     },
 
-    renderMinistryList() { 
-        const cont = document.getElementById('ministry-list'); if(!cont) return; 
-        cont.innerHTML = Object.entries(Data.MINISTRIES).map(([n, d]) => `
-            <button onclick="ui.showPolicyBank('${n}')" class="p-2 border border-stone-400 bg-white hover:bg-black hover:text-white hover:border-black transition flex flex-col items-center gap-1 group">
+    renderMinistryList() {
+        const cont = document.getElementById('ministry-list'); if(!cont) return;
+        cont.innerHTML = Object.entries(Data.MINISTRIES).map(([n, d]) => {
+            const workload = d.workload || 0;
+            return `
+            <button onclick="ui.showPolicyBank('${n}')" class="relative p-2 border border-stone-400 bg-white hover:bg-black hover:text-white hover:border-black transition flex flex-col items-center gap-1 group">
+                ${workload > 50 ? `<div class="absolute top-0.5 right-0.5 w-2 h-2 rounded-full ${workload > 80 ? 'bg-red-600' : 'bg-amber-500'}" title="ภาระงานสูง"></div>` : ''}
                 <i class="fas ${d.icon} text-lg text-stone-400 group-hover:text-white"></i>
                 <span class="text-[9px] font-bold uppercase">${n}</span>
             </button>
-        `).join(""); 
+        `;
+        }).join("");
     },
 
     // --- 3. PARLIAMENT (ปรับใหม่: Document Style) ---
@@ -760,6 +764,12 @@ export const ui = {
         document.getElementById('event-title').innerText = `Policy Review`;
         document.getElementById('stakeholder-reactions').classList.remove('hidden');
         let h = "";
+        // State Capacity (Phase 4): a preview, not a promise -- ministry workload, minister fit,
+        // and fiscal condition can all shift before this bill clears 3 readings, so the numbers
+        // below are the full legal effect, scaled down at actual implementation time.
+        const { effectiveness, fitLabel } = engine.getImplementationEffectiveness(p);
+        const effColor = effectiveness > 0.85 ? 'text-emerald-700' : effectiveness > 0.6 ? 'text-amber-700' : 'text-red-700';
+        h += `<div class="mb-3 pb-2 border-b-2 border-black"><div class="flex justify-between text-xs"><span class="font-bold uppercase tracking-widest text-stone-500">ประสิทธิผลคาดการณ์ (ถ้าผ่านตอนนี้)</span><span class="font-mono font-bold ${effColor}">${(effectiveness*100).toFixed(0)}%</span></div><div class="text-[10px] text-stone-500 mt-1">${fitLabel}</div></div>`;
         stakeholders.forEach(s => {
             const impact = p.impact[s.name] || 0;
             const color = impact > 0 ? 'text-green-700' : (impact < 0 ? 'text-red-700' : 'text-stone-400');
@@ -781,7 +791,13 @@ export const ui = {
     showPolicyBank(mName) {
         this.resetModalState();
         const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName);
+        const ministry = Data.MINISTRIES[mName];
         let h = "";
+        const workload = ministry?.workload || 0;
+        if (workload > 0) {
+            const wColor = workload > 80 ? 'text-red-700' : workload > 50 ? 'text-amber-700' : 'text-stone-500';
+            h += `<div class="flex justify-between text-[10px] uppercase tracking-widest font-bold mb-2"><span class="${wColor}">ภาระงานกระทรวง</span><span class="${wColor}">${workload.toFixed(0)}%</span></div>`;
+        }
         if (mName === "กลาโหม") {
             const military = state.world.military ?? 50;
             h += `<div class="border-2 border-black p-3 mb-3 bg-stone-50 flex justify-between items-center">

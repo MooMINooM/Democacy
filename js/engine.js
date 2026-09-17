@@ -87,6 +87,33 @@ function getApprovalBreakdown() {
 function getGrowthBreakdown() { return state.world.growthBreakdown || {}; }
 function getCabinetStabilityBreakdown() { return state.world.cabinetStabilityBreakdown || {}; }
 
+// State Capacity (Phase 4): "Policy Passed" and "Policy Effective" are different things -- a
+// bill clearing parliament doesn't mean the state can deliver it in full. One pure function so
+// both the pre-vote preview (ui.showStakeholderReview) and the actual finalizeVote() outcome
+// use the exact same math, not two formulas that can drift apart.
+// Implemented Effect = Legal Effect x Ministry Capacity x Minister Fit x Budget Coverage.
+function getImplementationEffectiveness(p) {
+    const ministry = Data.MINISTRIES[p.ministry];
+    const workload = ministry?.workload || 0;
+    const capacityMultiplier = Math.max(0.3, 1 - workload / 150);
+
+    const minister = ministry?.currentMinister;
+    let fitMultiplier, fitLabel;
+    if (!minister) { fitMultiplier = 0.5; fitLabel = "ไม่มีรัฐมนตรีดูแลกระทรวงนี้"; }
+    else if (minister.trait.goal === p.goal) { fitMultiplier = 1.15; fitLabel = `${minister.name}สนใจประเด็นนี้เป็นพิเศษ`; }
+    else if (ideologiesConflict(minister.trait.ideology, p.ideology)) { fitMultiplier = 0.7; fitLabel = `${minister.name}ไม่เห็นด้วยกับแนวทางนี้`; }
+    else { fitMultiplier = 1.0; fitLabel = `${minister.name}ดูแลตามปกติ`; }
+
+    // Budget Coverage reads the same fiscalCondition tag Phase 1/2 already computes -- a policy
+    // costing a few billion barely dents a multi-trillion treasury on paper, but a government
+    // already in a tight or over-stretched fiscal position can't actually staff and fund it in full.
+    const fiscal = getNationalContext().fiscalCondition;
+    const budgetMultiplier = fiscal === "Debt Stress" ? 0.5 : fiscal === "Tight" ? 0.75 : 1;
+
+    const effectiveness = Math.max(0.2, capacityMultiplier * fitMultiplier * budgetMultiplier);
+    return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload };
+}
+
 // state.speed can advance the calendar by more than 1 day per tick, so periodic checks
 // (day-of-month triggers, month-boundary updates) must detect crossing a mark, not equal it exactly.
 function crossedMonthBoundary(prev, curr) {
@@ -110,7 +137,7 @@ export const gameClock = {
         if (state.speed === 0) return;
         const prevDate = new Date(state.date);
         state.date.setDate(state.date.getDate() + state.speed);
-        Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; });
+        Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; m.workload = Math.max(0, (m.workload || 0) - 1.2 * state.speed); });
         state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
         state.world.stabilityPenalty = Math.max(0, (state.world.stabilityPenalty || 0) - 0.5 * state.speed);
         state.world.growthPenalty = Math.max(0, (state.world.growthPenalty || 0) - 0.15 * state.speed);
@@ -226,7 +253,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness,
 
     init() {
         state.voteModifier = null;
@@ -1004,14 +1031,22 @@ export const engine = {
         if (passed) {
             if (p.stage < 3) { p.stage++; p.isDeliberating = true; p.remainingDays = p.totalDays; }
             else {
+                // State Capacity (Phase 4): passing parliament is "Policy Passed", not
+                // "Policy Effective" -- the ministry's workload, whether its minister actually
+                // cares about this issue, and the government's fiscal room all cut into how
+                // much of the legal effect the state can actually deliver.
+                const { effectiveness, fitLabel } = getImplementationEffectiveness(p);
                 state.world.nationalBudget -= p.cost;
-                Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, v, p.name));
-                if (p.worldImpact) Object.entries(p.worldImpact).forEach(([stat, v]) => this.applyWorldStatImpact(stat, v, p.name));
+                Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, v * effectiveness, p.name));
+                if (p.worldImpact) Object.entries(p.worldImpact).forEach(([stat, v]) => this.applyWorldStatImpact(stat, v * effectiveness, p.name));
                 state.foreign.forEach(c => {
-                    if (c.ideology === p.ideology) this.applyForeignImpact(c.id, 8, p.name, 60);
-                    else if (ideologiesConflict(c.ideology, p.ideology)) this.applyForeignImpact(c.id, -8, p.name, 60);
+                    if (c.ideology === p.ideology) this.applyForeignImpact(c.id, 8 * effectiveness, p.name, 60);
+                    else if (ideologiesConflict(c.ideology, p.ideology)) this.applyForeignImpact(c.id, -8 * effectiveness, p.name, 60);
                 });
-                this.addNews(`${p.name} บังคับใช้เป็นกฎหมาย`);
+                const ministry = Data.MINISTRIES[p.ministry];
+                if (ministry) ministry.workload = Math.min(100, (ministry.workload || 0) + 30);
+                const effLabel = effectiveness > 0.85 ? "ดำเนินงานได้เต็มที่" : effectiveness > 0.6 ? "ดำเนินงานได้ปานกลาง" : "ดำเนินงานได้จำกัดมาก";
+                this.addNews(`${p.name} บังคับใช้เป็นกฎหมาย`, `${effLabel} (ประสิทธิผล ${(effectiveness*100).toFixed(0)}%) -- ${fitLabel}`);
                 state.activePolicies = state.activePolicies.filter(x => x.name !== pName);
             }
         } else { state.activePolicies = state.activePolicies.filter(x => x.name !== pName); }
