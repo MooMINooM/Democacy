@@ -316,12 +316,25 @@ export const engine = {
         state.world.nationalBudget += taxRevenue;
         this.addNews("รายได้ภาษีประจำเดือน", `รัฐเก็บภาษีได้ ฿${(taxRevenue/1e9).toFixed(1)}B จากภาวะเศรษฐกิจที่เติบโต ${state.world.growth.toFixed(1)}% และการค้าระหว่างประเทศ`);
 
+        // Population dynamics: each province's headcount drifts monthly instead of staying
+        // frozen for the whole game. A slow baseline tracks national growth; the real driver
+        // is investmentLevel -- a province built up over a term pulls in migrants, one left
+        // neglected bleeds them, slowly enough that it only shows up over years of play.
+        state.provinces.forEach(prov => {
+            const investmentPull = ((prov.investmentLevel ?? 50) - 50) * 0.00003;
+            const nationalBaseline = state.world.growth * 0.00015;
+            prov.pop = Math.max(50000, Math.round(prov.pop * (1 + investmentPull + nationalBaseline)));
+        });
+
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
         if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
         const govSeats = state.parties.filter(p => p.status === "Government").reduce((s, p) => s + p.seats, 0);
-        let factionScore = 0; let minCount = 0;
-        Object.values(Data.MINISTRIES).forEach(m => { if(m.currentMinister) { const f = state.factions.find(fx => fx.name === m.currentMinister.status); if(f) factionScore += f.approval; minCount++; } });
-        state.world.cabinetStability = Math.max(0, Math.floor((govSeats / Data.TOTAL_SEATS * 50) + (minCount > 0 ? (factionScore / minCount) * 0.5 : 25) - (state.world.stabilityPenalty || 0)));
+        // A minister's prestige feeds cabinetStability alongside their base faction's approval:
+        // a well-known appointee reassures the public, an unknown backbencher does not.
+        let factionScore = 0; let prestigeScore = 0; let minCount = 0;
+        Object.values(Data.MINISTRIES).forEach(m => { if(m.currentMinister) { const f = state.factions.find(fx => fx.name === m.currentMinister.status); if(f) factionScore += f.approval; prestigeScore += m.currentMinister.prestige ?? 50; minCount++; } });
+        const cabinetPrestigeBonus = minCount > 0 ? (prestigeScore / minCount - 50) * 0.15 : 0;
+        state.world.cabinetStability = Math.max(0, Math.floor((govSeats / Data.TOTAL_SEATS * 50) + (minCount > 0 ? (factionScore / minCount) * 0.5 : 25) + cabinetPrestigeBonus - (state.world.stabilityPenalty || 0)));
         state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
 
         const positionIncome = { "นายกรัฐมนตรี": 20000000, "หัวหน้าพรรค": 12000000, "สส. เขต": 6000000 }[state.player.position] || 6000000;
@@ -386,16 +399,18 @@ export const engine = {
 
     buyCobra(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
-        const cost = 10000000 * mp.trait.ability.costMod * mp.trait.socio.costMod; 
-        
+        // A well-known MP demands a bigger payoff to keep quiet, and is harder to turn without
+        // it leaking -- prestige makes the secret deal both costlier and riskier.
+        const cost = 10000000 * mp.trait.ability.costMod * mp.trait.socio.costMod * (1 + mp.prestige / 150);
+
         if (mp.isCobra) { alert("เป็นงูเห่าอยู่แล้ว"); return; }
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
-        
+
         state.world.transparency = Math.max(0, state.world.transparency - 5);
 
-        // Success Chance: depends on loyalty, and on trust burned by any past failed approach
+        // Success Chance: depends on loyalty, trust burned by any past failed approach, and prestige
         const trustPenalty = Math.max(0, 50 - mp.trust) * 0.4;
-        const successChance = 100 - (mp.loyalty * 0.8) - trustPenalty;
+        const successChance = 100 - (mp.loyalty * 0.8) - trustPenalty - mp.prestige * 0.25;
         const isSuccess = Math.random() * 100 <= successChance;
 
         if (!isSuccess) {
