@@ -50,12 +50,25 @@ export const gameClock = {
              if(army && army.approval < 50) engine.triggerCoup();
         }
         
+        // The 5 policy-driven national stats: apply/decay their modifiers, then drift back
+        // toward baseline like faction/party trust does, so a policy's effect fades unless renewed.
+        Object.entries(Data.WORLD_STAT_META).forEach(([stat, meta]) => {
+            const mods = state.world.statMods[stat] || (state.world.statMods[stat] = []);
+            mods.forEach(m => { state.world[stat] = Math.max(0, Math.min(100, state.world[stat] + m.perDay * state.speed)); m.remaining -= state.speed; });
+            state.world.statMods[stat] = mods.filter(m => m.remaining > 0);
+            state.world[stat] = Math.max(0, Math.min(100, state.world[stat] + (meta.baseline - state.world[stat]) * 0.002 * state.speed + (Math.random() - 0.5) * 0.1 * state.speed));
+        });
+
         state.factions.forEach(f => {
             (f.modifiers || []).forEach(m => { f.approval = Math.max(0, Math.min(100, f.approval + m.perDay * state.speed)); m.remaining -= state.speed; });
             f.modifiers = (f.modifiers || []).filter(m => m.remaining > 0);
             // Wealthier/more capital-exposed factions feel national growth (or a recession) more directly, day to day
             const growthBias = (state.world.growth / 10) * (f.wealth / 100) * 0.3;
-            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + growthBias * state.speed));
+            // The unemployment/environment indices ripple into the factions they hit hardest
+            let statBias = 0;
+            if (f.name === "สิ่งแวดล้อม") statBias += (state.world.environment - 55) * 0.03;
+            if (f.name === "คนว่างงาน" || f.name === "แรงงาน") statBias -= (state.world.unemployment - 20) * 0.03;
+            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + growthBias * state.speed + statBias * state.speed));
         });
 
         state.foreign.forEach(c => {
@@ -97,6 +110,8 @@ export const engine = {
         state.voteModifier = null;
         state.world.transparency = 100;
         state.world.stabilityPenalty = 0;
+        Object.entries(Data.WORLD_STAT_META).forEach(([stat, meta]) => { state.world[stat] = meta.baseline; });
+        state.world.statMods = { unemployment: [], crime: [], health: [], education: [], environment: [] };
         state.world.electionDay = new Date(state.date);
         state.world.electionDay.setDate(state.world.electionDay.getDate() + Data.ELECTION_TERM_DAYS);
         state.history = { approval: [], budget: [] };
@@ -238,12 +253,24 @@ export const engine = {
         c.modifiers.push({ source, perDay: value / days, remaining: days });
     },
 
+    // Same idea again, for one of the 5 national stats a policy's worldImpact can move
+    // (unemployment, crime, health, education, environment).
+    applyWorldStatImpact(stat, value, source, days = 60) {
+        if (!Data.WORLD_STAT_META[stat]) return;
+        if (!state.world.statMods[stat]) state.world.statMods[stat] = [];
+        state.world.statMods[stat].push({ source, perDay: value / days, remaining: days });
+    },
+
     processMonthlyUpdate() {
         // Growth tracks how the economically-weighted population feels, not a plain random walk:
         // a faction with a bigger production base (basePop * wealth) swings growth more when its approval moves.
         const totalOutput = state.factions.reduce((s, f) => s + factionOutput(f), 0);
         const weightedApproval = state.factions.reduce((s, f) => s + (f.approval - 50) * factionOutput(f), 0) / totalOutput;
-        const targetGrowth = weightedApproval * 0.16;
+        // A healthier, better-educated, safer, cleaner, more employed country grows faster --
+        // this is the other half of the policy web: worldImpact stats feed back into growth,
+        // not just faction approval.
+        const qualityOfLife = (state.world.health + state.world.education + (100 - state.world.crime) + state.world.environment) / 4 - state.world.unemployment;
+        const targetGrowth = weightedApproval * 0.16 + (qualityOfLife - 40) * 0.03;
         state.world.growth = state.world.growth + (targetGrowth - state.world.growth) * 0.3 + (Math.random() - 0.5) * 0.4;
 
         // Trade partners in good standing add a little extra tax revenue on top of domestic growth; souring ones bleed it away
@@ -642,6 +669,7 @@ export const engine = {
             else {
                 state.world.nationalBudget -= p.cost;
                 Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, v, p.name));
+                if (p.worldImpact) Object.entries(p.worldImpact).forEach(([stat, v]) => this.applyWorldStatImpact(stat, v, p.name));
                 state.foreign.forEach(c => {
                     if (c.ideology === p.ideology) this.applyForeignImpact(c.id, 8, p.name, 60);
                     else if (ideologiesConflict(c.ideology, p.ideology)) this.applyForeignImpact(c.id, -8, p.name, 60);

@@ -60,6 +60,22 @@ export const ui = {
         this.renderNews();
         this.renderTrendGraphs();
         this.renderMiniFactions();
+        this.renderNationalStats();
+    },
+
+    renderNationalStats() {
+        const cont = document.getElementById('national-stats'); if (!cont) return;
+        cont.innerHTML = Object.entries(Data.WORLD_STAT_META).map(([stat, meta]) => {
+            const value = state.world[stat] ?? meta.baseline;
+            const good = meta.goodDirection > 0 ? value >= meta.baseline : value <= meta.baseline;
+            return `
+            <div class="border-2 border-black p-3 text-center">
+                <i class="fas ${meta.icon} text-lg text-stone-400 mb-1"></i>
+                <div class="text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1">${meta.label}</div>
+                <div class="text-xl font-black font-mono ${good ? 'text-emerald-700' : 'text-red-700'}">${value.toFixed(0)}</div>
+                <div class="w-full h-1 bg-stone-200 mt-1"><div class="h-full bg-black" style="width:${value}%"></div></div>
+            </div>`;
+        }).join('');
     },
 
     renderNews() { 
@@ -624,7 +640,29 @@ export const ui = {
         document.getElementById('event-options').innerHTML = `<button onclick="window.engine.finalizeVote('${p.name}', ${passed})" class="w-full p-4 ${passed ? 'bg-black' : 'bg-red-700'} text-white font-bold border-2 border-black text-lg hover:opacity-90">รับทราบผล</button>`;
     },
     showQuidProQuo(p, demand, party) { this.resetModalState(); document.getElementById('event-title').innerText = `Backroom Deal`; document.getElementById('event-desc').innerHTML = `<div class="border-l-4 border-black pl-4 my-4"><div class="font-bold text-sm uppercase text-stone-500">Proposal from ${party.name} <span class="ml-2 font-mono ${(party.trust ?? 70) > 60 ? 'text-emerald-700' : ((party.trust ?? 70) < 40 ? 'text-red-700' : 'text-stone-500')}">(Trust: ${(party.trust ?? 70).toFixed(0)}%)</span></div><div class="font-serif text-lg italic">"We will support ${p.name} if you approve this:"</div><div class="mt-2 font-bold bg-stone-100 p-2 border border-black">${demand.name}</div><div class="mt-2 text-xs text-stone-500">ปฏิเสธจะทำให้ trust ของพรรคนี้ลดลง และมีผลต่อการโหวตครั้งต่อๆไปด้วย ไม่ใช่แค่ร่างนี้</div></div>`; document.getElementById('event-options').innerHTML = `<div class="grid grid-cols-2 gap-4"><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", true)' class="p-3 bg-black text-white font-bold uppercase hover:opacity-80">Accept</button><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", false)' class="p-3 border-2 border-black font-bold uppercase hover:bg-stone-100">Reject</button></div>`; document.getElementById('event-modal').classList.remove('hidden'); },
-    showStakeholderReview(p, stakeholders, proposer) { this.resetModalState(); document.getElementById('event-title').innerText = `Policy Review`; document.getElementById('stakeholder-reactions').classList.remove('hidden'); let h = ""; stakeholders.forEach(s => { const impact = p.impact[s.name] || 0; const color = impact > 0 ? 'text-green-700' : (impact < 0 ? 'text-red-700' : 'text-stone-400'); h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${color}">${impact > 0 ? '+' : ''}${impact}</span></div>`; }); document.getElementById('stakeholder-reactions').innerHTML = h; document.getElementById('event-desc').innerText = `Submit ${p.name} to Parliament?`; document.getElementById('event-options').innerHTML = `<button onclick="engine.confirmProposal('${p.name}', '${proposer}')" class="w-full p-3 bg-black text-white font-bold uppercase border-2 border-black">Confirm</button><button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 border-2 border-black font-bold uppercase hover:bg-stone-100 mt-2">Cancel</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
+    showStakeholderReview(p, stakeholders, proposer) {
+        this.resetModalState();
+        document.getElementById('event-title').innerText = `Policy Review`;
+        document.getElementById('stakeholder-reactions').classList.remove('hidden');
+        let h = "";
+        stakeholders.forEach(s => {
+            const impact = p.impact[s.name] || 0;
+            const color = impact > 0 ? 'text-green-700' : (impact < 0 ? 'text-red-700' : 'text-stone-400');
+            h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${color}">${impact > 0 ? '+' : ''}${impact}</span></div>`;
+        });
+        if (p.worldImpact) {
+            h += `<div class="mt-2 pt-2 border-t-2 border-black text-[9px] uppercase tracking-widest text-stone-500 font-bold">ผลต่อสถิติประเทศ</div>`;
+            Object.entries(p.worldImpact).forEach(([stat, v]) => {
+                const meta = Data.WORLD_STAT_META[stat]; if (!meta) return;
+                const isGood = meta.goodDirection > 0 ? v > 0 : v < 0;
+                h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${meta.label}</span><span class="font-mono ${isGood ? 'text-green-700' : 'text-red-700'}">${v > 0 ? '+' : ''}${v}</span></div>`;
+            });
+        }
+        document.getElementById('stakeholder-reactions').innerHTML = h;
+        document.getElementById('event-desc').innerText = `Submit ${p.name} to Parliament?`;
+        document.getElementById('event-options').innerHTML = `<button onclick="engine.confirmProposal('${p.name}', '${proposer}')" class="w-full p-3 bg-black text-white font-bold uppercase border-2 border-black">Confirm</button><button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 border-2 border-black font-bold uppercase hover:bg-stone-100 mt-2">Cancel</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
     showPolicyBank(mName) { this.resetModalState(); const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName); let h = `<div class="grid grid-cols-1 gap-2">`; if (filtered.length === 0) h += `<div class="italic text-stone-400 text-center">No drafts available</div>`; else filtered.forEach(p => { h += `<div class="border border-black p-3 hover:bg-stone-50 transition flex justify-between items-center"><div><div class="font-bold text-sm">${p.name}</div><div class="text-[10px] font-mono">฿${(p.cost/1e9).toFixed(1)}B</div></div><button onclick="engine.propose('${p.name}', 'รัฐบาล')" class="bg-black text-white text-[9px] font-bold px-3 py-1 uppercase">Draft</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `Drafts: ${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
     
     renderAI() { /* Placeholder */ },
