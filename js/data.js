@@ -272,3 +272,26 @@ export const PROVINCE_FACTION_OVERRIDES = {
     "นราธิวาส": "ผู้นำศาสนา",
     "สตูล": "ผู้นำศาสนา"
 };
+
+// Which ideology (from IDEOLOGY_POOL) each faction tends to reward at the ballot box.
+// Used at election time: a party campaigning on a province's affinity ideology gets a
+// local boost in that province's constituency races.
+export const FACTION_IDEOLOGY_AFFINITY = {
+    "กองทัพ": "ชาตินิยม",
+    "หัวก้าวหน้า": "หัวก้าวหน้า",
+    "อนุรักษ์": "อนุรักษ์นิยม",
+    "เทคโนแครต": "โลกาภิวัตน์",
+    "นายทุน": "อนุรักษ์นิยม",
+    "ผู้นำศาสนา": "ศาสนานิยม",
+    "สิ่งแวดล้อม": "หัวก้าวหน้า",
+    "ชนชั้นกลาง": "เสรีนิยม",
+    "แรงงาน": "สังคมนิยม",
+    "เกษตรกร": "ประชานิยม",
+    "คนว่างงาน": "ประชานิยม",
+    "เด็กรุ่นใหม่": "สิทธิมนุษยชน",
+    "ชาตินิยมขวาจัด": "ชาตินิยม",
+    "สื่อและปัญญาชน": "เสรีนิยม",
+    "ทุนข้ามชาติ": "โลกาภิวัตน์",
+    "ท้องถิ่น": "การแยกตัว",
+    "ข้าราชการ": "อนุรักษ์นิยม"
+};
