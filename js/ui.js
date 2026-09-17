@@ -431,6 +431,7 @@ export const ui = {
                 <div class="font-bold text-sm uppercase tracking-wide border-t-2 border-black pt-2 mt-2">${c.name}</div>
                 <div class="text-[9px] text-stone-500 italic mb-1">แนวคิด: ${c.ideology} · คู่ค้าหลัก: ${Data.INDUSTRY_TYPES[c.keyIndustry]?.label || c.keyIndustry}</div>
                 <div class="w-full bg-stone-200 h-1 mt-1"><div class="h-full ${relationColor}" style="width: ${c.relation}%"></div></div>
+                ${c.relation < 15 ? `<div class="mt-2 text-[9px] font-bold uppercase tracking-widest text-red-700"><i class="fas fa-triangle-exclamation mr-1"></i>เสี่ยงปะทะชายแดน</div>` : ''}
                 ${(c.modifiers && c.modifiers.length > 0) ? `
                 <div class="mt-3 pt-2 border-t border-stone-200 space-y-1">
                     ${c.modifiers.slice(0, 3).map(m => `
@@ -676,7 +677,38 @@ export const ui = {
         document.getElementById('event-options').innerHTML = `<button onclick="engine.confirmProposal('${p.name}', '${proposer}')" class="w-full p-3 bg-black text-white font-bold uppercase border-2 border-black">Confirm</button><button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-3 border-2 border-black font-bold uppercase hover:bg-stone-100 mt-2">Cancel</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
     },
-    showPolicyBank(mName) { this.resetModalState(); const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName); let h = `<div class="grid grid-cols-1 gap-2">`; if (filtered.length === 0) h += `<div class="italic text-stone-400 text-center">No drafts available</div>`; else filtered.forEach(p => { h += `<div class="border border-black p-3 hover:bg-stone-50 transition flex justify-between items-center"><div><div class="font-bold text-sm">${p.name}</div><div class="text-[10px] font-mono">฿${(p.cost/1e9).toFixed(1)}B</div></div><button onclick="engine.propose('${p.name}', 'รัฐบาล')" class="bg-black text-white text-[9px] font-bold px-3 py-1 uppercase">Draft</button></div>`; }); h += `</div>`; document.getElementById('event-title').innerText = `Drafts: ${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`; document.getElementById('event-modal').classList.remove('hidden'); },
-    
+    showPolicyBank(mName) {
+        this.resetModalState();
+        const filtered = Data.POLICY_TEMPLATES.filter(p => p.ministry === mName);
+        let h = "";
+        if (mName === "กลาโหม") {
+            const military = state.world.military ?? 50;
+            h += `<div class="border-2 border-black p-3 mb-3 bg-stone-50 flex justify-between items-center">
+                <div><div class="font-bold text-sm">ความพร้อมทางทหาร</div><div class="text-[10px] text-stone-500">ปัจจุบัน ${military.toFixed(0)}%</div></div>
+                <button onclick="engine.investMilitary()" class="bg-black text-white text-[9px] font-bold px-3 py-1 uppercase">เพิ่มงบ ฿15B</button>
+            </div>`;
+        }
+        h += `<div class="grid grid-cols-1 gap-2">`;
+        if (filtered.length === 0) h += `<div class="italic text-stone-400 text-center">No drafts available</div>`;
+        else filtered.forEach(p => { h += `<div class="border border-black p-3 hover:bg-stone-50 transition flex justify-between items-center"><div><div class="font-bold text-sm">${p.name}</div><div class="text-[10px] font-mono">฿${(p.cost/1e9).toFixed(1)}B</div></div><button onclick="engine.propose('${p.name}', 'รัฐบาล')" class="bg-black text-white text-[9px] font-bold px-3 py-1 uppercase">Draft</button></div>`; });
+        h += `</div>`;
+        document.getElementById('event-title').innerText = `Drafts: ${mName}`; document.getElementById('event-desc').innerHTML = h; document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`; document.getElementById('event-modal').classList.remove('hidden');
+    },
+
+    showBorderConflict(c, playerStrength, enemyStrength, won) {
+        this.resetModalState();
+        document.getElementById('event-title').innerText = `ปะทะชายแดน: ${c.name}`;
+        document.getElementById('event-desc').innerHTML = `
+            <div class="text-center font-serif text-xl font-bold border-y-2 border-black py-4 my-4">ความสัมพันธ์กับ${c.name}ทรุดหนักจนเกิดการปะทะที่ชายแดน</div>
+            <div class="grid grid-cols-2 gap-4 text-center mb-4">
+                <div class="border-2 border-black p-3"><div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-1">กำลังฝ่ายไทย</div><div class="text-2xl font-black font-mono">${playerStrength.toFixed(0)}</div></div>
+                <div class="border-2 border-black p-3"><div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-1">กำลังฝ่าย${c.name}</div><div class="text-2xl font-black font-mono">${enemyStrength.toFixed(0)}</div></div>
+            </div>
+            <div class="text-center text-lg font-black uppercase tracking-widest ${won ? 'text-emerald-700' : 'text-red-700'}">${won ? 'ฝ่ายไทยยันสถานการณ์ได้' : 'ฝ่ายไทยเสียเปรียบ'}</div>
+        `;
+        document.getElementById('event-options').innerHTML = `<button onclick="window.engine.resolveBorderConflict('${c.id}', ${won})" class="w-full p-4 ${won ? 'bg-black' : 'bg-red-700'} text-white font-bold border-2 border-black text-lg hover:opacity-90">รับทราบผล</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
+
     resetModalState() { document.getElementById('voting-display').classList.add('hidden'); document.getElementById('stakeholder-reactions').classList.add('hidden'); document.getElementById('event-options').innerHTML = ""; document.getElementById('event-desc').innerHTML = ""; }
 };

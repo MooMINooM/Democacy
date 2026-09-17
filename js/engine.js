@@ -106,6 +106,12 @@ export const gameClock = {
             const grudge = state.foreign.find(c => c.relation < 20);
             if (grudge) engine.triggerDiplomaticIncident(grudge);
         }
+        // Relations have to collapse further than a mere diplomatic incident, and it's rarer
+        // still, before a border conflict actually breaks out.
+        if (Math.random() < 0.003) {
+            const flashpoint = state.foreign.find(c => c.relation < 15);
+            if (flashpoint) engine.triggerBorderConflict(flashpoint);
+        }
 
         state.parties.forEach(p => {
             let target = p.status === "Government" ? state.world.approval : (p.status === "Opposition" ? 100 - state.world.approval : 50);
@@ -552,6 +558,56 @@ export const engine = {
         const industryLabel = Data.INDUSTRY_TYPES[c.keyIndustry]?.label || c.keyIndustry;
         this.addNews(`${c.name}กดดันทางการค้า`, `ความสัมพันธ์กับ${c.name}ทรุดหนักจนกระทบการค้าระหว่างประเทศ จังหวัดที่ทำ${industryLabel}จะได้รับผลกระทบหนักสุด`);
         ui.updateMain(); ui.renderForeignList();
+    },
+
+    // National-level counterpart to investProvince(): spends budget to push the military
+    // readiness stat up via the same decaying-modifier channel every other world stat uses.
+    investMilitary() {
+        const cost = 1.5e10;
+        if (state.world.nationalBudget < cost) { alert(`งบประเทศไม่พอ (ต้องการ ฿${(cost/1e9).toFixed(1)}B)`); return; }
+        state.world.nationalBudget -= cost;
+        this.applyWorldStatImpact("military", 20, "จัดซื้อยุทโธปกรณ์เพิ่มเติม", 60);
+        this.applyFactionImpact("กองทัพ", 8, "จัดซื้อยุทโธปกรณ์เพิ่มเติม");
+        this.addNews("เพิ่มงบประมาณกองทัพ", "จัดซื้อยุทโธปกรณ์เสริมความพร้อมทางทหาร");
+        ui.updateMain(); ui.showPolicyBank("กลาโหม");
+    },
+
+    // Relations with a foreign power collapsing past triggerDiplomaticIncident's threshold can
+    // escalate into an actual border conflict. Resolved as a single event, not a persistent
+    // "at war" state: outcome is decided immediately, consequences ripple out from there.
+    triggerBorderConflict(c) {
+        gameClock.setSpeed(0); ui.resetModalState();
+        const playerStrength = Math.max(5, state.world.military + (Math.random() * 20 - 10));
+        const enemyStrength = 40 + Math.random() * 40;
+        const won = playerStrength >= enemyStrength;
+        ui.showBorderConflict(c, playerStrength, enemyStrength, won);
+    },
+
+    resolveBorderConflict(countryId, won) {
+        const c = state.foreign.find(x => x.id === countryId);
+        const cost = won ? 8e9 : 2.5e10;
+        state.world.nationalBudget = Math.max(0, state.world.nationalBudget - cost);
+        this.applyWorldStatImpact("military", won ? 8 : -15, `ปะทะชายแดนกับ${c.name}`, 60);
+        this.applyFactionImpact("กองทัพ", won ? 10 : -8, `ปะทะชายแดนกับ${c.name}`);
+        c.relation = Math.max(0, c.relation - (won ? 10 : 5));
+        state.world.approval = Math.max(0, Math.min(100, state.world.approval + (won ? 3 : -6)));
+
+        // Reuse the same investmentLevel modifier channel investProvince() uses: it already
+        // drives production (Phase 5), the election swing (PR #10), and population (PR #12),
+        // so a lost skirmish disrupting the industry tied to this country ripples through all three.
+        const penalty = won ? -8 : -25; const days = won ? 45 : 90;
+        state.provinces.filter(p => p.industry === c.keyIndustry).forEach(p => {
+            if (!p.modifiers) p.modifiers = [];
+            p.modifiers.push({ source: `ปะทะชายแดนกับ${c.name}`, perDay: penalty / days, remaining: days });
+        });
+
+        const industryLabel = Data.INDUSTRY_TYPES[c.keyIndustry]?.label || c.keyIndustry;
+        this.addNews(
+            won ? `ทหารไทยยันการปะทะชายแดนกับ${c.name}สำเร็จ` : `ปะทะชายแดนกับ${c.name}ยืดเยื้อ ฝ่ายไทยเสียเปรียบ`,
+            won ? `กองทัพควบคุมสถานการณ์ได้ แต่จังหวัดที่ทำ${industryLabel}ยังชะงักงันชั่วคราว` : `ความไม่สงบกระทบจังหวัดที่ทำ${industryLabel}หนัก และกดดันเสถียรภาพรัฐบาล`
+        );
+        document.getElementById('event-modal').classList.add('hidden');
+        ui.updateMain(); ui.renderForeignList(); gameClock.setSpeed(1);
     },
 
     investProvince(name) {
