@@ -3,8 +3,9 @@ export const state = {
     speed: 0, 
     player: { name: "", personalFunds: 150000000, background: null, party: null, position: "" },
     world: { nationalBudget: 3400000000000, approval: 50, growth: 2.4, cabinetStability: 80, transparency: 100, stabilityPenalty: 0 },
-    factions: [], 
-    parties: [], 
+    factions: [],
+    foreign: [],
+    parties: [],
     leaders: [], 
     activePolicies: [], 
     news: []

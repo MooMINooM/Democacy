@@ -44,6 +44,20 @@ export const gameClock = {
             const growthBias = (state.world.growth / 10) * (f.wealth / 100) * 0.3;
             f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + growthBias * state.speed));
         });
+
+        state.foreign.forEach(c => {
+            (c.modifiers || []).forEach(m => { c.relation = Math.max(0, Math.min(100, c.relation + m.perDay * state.speed)); m.remaining -= state.speed; });
+            c.modifiers = (c.modifiers || []).filter(m => m.remaining > 0);
+            // A government whose ideology lines up with (or clashes with) a power's own drifts relation slowly either way
+            const govIdeo = state.player.party?.ideologies?.[0];
+            const align = ideologiesConflict(c.ideology, govIdeo) ? -0.06 : (c.ideology === govIdeo ? 0.06 : 0);
+            c.relation = Math.max(0, Math.min(100, c.relation + (Math.random() - 0.5) * 0.8 + align * state.speed));
+        });
+        if (Math.random() < 0.01) {
+            const grudge = state.foreign.find(c => c.relation < 20);
+            if (grudge) engine.triggerDiplomaticIncident(grudge);
+        }
+
         if (state.date.getDate() === 1) engine.processMonthlyUpdate();
         ui.updateMain();
     }
@@ -59,6 +73,7 @@ export const engine = {
         state.lastVoteLog = []; 
 
         state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5), modifiers: [] }));
+        state.foreign = Data.FOREIGN_POWERS.map(c => ({ ...c, relation: 50 + (Math.random() * 20 - 10), modifiers: [] }));
         if(state.parties.length === 0) state.parties = this.generateGameParties();
         state.leaders = [];
         let nIdx = 0;
@@ -160,7 +175,15 @@ export const engine = {
         if (!fac.modifiers) fac.modifiers = [];
         fac.modifiers.push({ source, perDay: value / days, remaining: days });
     },
-    
+
+    // Same idea as applyFactionImpact, for a foreign power's relation score.
+    applyForeignImpact(countryId, value, source, days = 60) {
+        const c = state.foreign.find(x => x.id === countryId);
+        if (!c) return;
+        if (!c.modifiers) c.modifiers = [];
+        c.modifiers.push({ source, perDay: value / days, remaining: days });
+    },
+
     processMonthlyUpdate() {
         // Growth tracks how the economically-weighted population feels, not a plain random walk:
         // a faction with a bigger production base (basePop * wealth) swings growth more when its approval moves.
@@ -169,9 +192,14 @@ export const engine = {
         const targetGrowth = weightedApproval * 0.16;
         state.world.growth = state.world.growth + (targetGrowth - state.world.growth) * 0.3 + (Math.random() - 0.5) * 0.4;
 
-        const taxRevenue = state.world.nationalBudget * Math.max(0.0004, 0.0012 + state.world.growth * 0.0004);
+        // Trade partners in good standing add a little extra tax revenue on top of domestic growth; souring ones bleed it away
+        const totalTradeWeight = state.foreign.reduce((s, c) => s + c.tradeWeight, 0);
+        const weightedRelation = state.foreign.reduce((s, c) => s + (c.relation - 50) * c.tradeWeight, 0) / totalTradeWeight;
+        const tradeBonus = weightedRelation * 0.000015;
+
+        const taxRevenue = state.world.nationalBudget * Math.max(0.0002, 0.0012 + state.world.growth * 0.0004 + tradeBonus);
         state.world.nationalBudget += taxRevenue;
-        this.addNews("รายได้ภาษีประจำเดือน", `รัฐเก็บภาษีได้ ฿${(taxRevenue/1e9).toFixed(1)}B จากภาวะเศรษฐกิจที่เติบโต ${state.world.growth.toFixed(1)}%`);
+        this.addNews("รายได้ภาษีประจำเดือน", `รัฐเก็บภาษีได้ ฿${(taxRevenue/1e9).toFixed(1)}B จากภาวะเศรษฐกิจที่เติบโต ${state.world.growth.toFixed(1)}% และการค้าระหว่างประเทศ`);
 
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
         if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
@@ -360,6 +388,35 @@ export const engine = {
         ui.renderActivePolicies(); ui.updateHUD();
     },
 
+    diplomaticVisit(countryId) {
+        const c = state.foreign.find(x => x.id === countryId);
+        const cost = 20000000;
+        if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        state.player.personalFunds -= cost;
+        c.relation = Math.min(100, c.relation + 12);
+        this.addNews(`เยือน${c.name}อย่างเป็นทางการ`, `ความสัมพันธ์ทางการทูตกับ${c.name}ดีขึ้น`);
+        ui.updateMain(); ui.renderForeignList();
+    },
+
+    tradeDeal(countryId) {
+        const c = state.foreign.find(x => x.id === countryId);
+        const cost = 1.5e10;
+        if (c.relation < 40) { alert("ความสัมพันธ์ยังไม่ดีพอสำหรับข้อตกลงการค้า (ต้องการ Relation 40%+)"); return; }
+        if (state.world.nationalBudget < cost) { alert(`งบประเทศไม่พอ (ต้องการ ฿${(cost/1e9).toFixed(1)}B)`); return; }
+        state.world.nationalBudget -= cost;
+        this.applyForeignImpact(countryId, 15, "ข้อตกลงการค้า", 90);
+        state.world.growth += 0.3;
+        this.addNews(`ลงนามข้อตกลงการค้ากับ${c.name}`, "กระตุ้นเศรษฐกิจและความสัมพันธ์ระหว่างประเทศ");
+        ui.updateMain(); ui.renderForeignList();
+    },
+
+    triggerDiplomaticIncident(c) {
+        state.world.growth = Math.max(-10, state.world.growth - 1);
+        c.relation = Math.max(0, c.relation - 5);
+        this.addNews(`${c.name}กดดันทางการค้า`, `ความสัมพันธ์กับ${c.name}ทรุดหนักจนกระทบการค้าระหว่างประเทศ`);
+        ui.updateMain(); ui.renderForeignList();
+    },
+
     triggerNoConfidence() {
         gameClock.setSpeed(0); ui.resetModalState();
         document.getElementById('event-title').innerText = `ศึกอภิปรายไม่ไว้วางใจ`;
@@ -466,6 +523,10 @@ export const engine = {
             else {
                 state.world.nationalBudget -= p.cost;
                 Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, v, p.name));
+                state.foreign.forEach(c => {
+                    if (c.ideology === p.ideology) this.applyForeignImpact(c.id, 8, p.name, 60);
+                    else if (ideologiesConflict(c.ideology, p.ideology)) this.applyForeignImpact(c.id, -8, p.name, 60);
+                });
                 this.addNews(`${p.name} บังคับใช้เป็นกฎหมาย`);
                 state.activePolicies = state.activePolicies.filter(x => x.name !== pName);
             }

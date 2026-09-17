@@ -19,7 +19,8 @@ export const ui = {
         if (t === 'parliament') { this.renderParliament(); }
         if (t === 'party-hq') { this.renderPartyHQ(); }
         if (t === 'factions') { this.renderFactionList(); }
-        
+        if (t === 'foreign') { this.renderForeignList(); }
+
         // MP List (Keep Logic)
         if (t === 'mps') {
             if (!this.currentPartyView && state.player.party) {
@@ -307,6 +308,41 @@ export const ui = {
                         </div>
                     `).join('')}
                 </div>` : ''}
+            </div>
+        `;
+        }).join("");
+    },
+
+    // --- FOREIGN AFFAIRS ---
+    renderForeignList() {
+        const cont = document.getElementById('foreign-list'); if(!cont) return;
+        cont.innerHTML = state.foreign.map(c => {
+            const relationColor = c.relation > 60 ? 'bg-emerald-500' : (c.relation < 35 ? 'bg-red-500' : 'bg-yellow-500');
+            return `
+            <div class="bg-white p-4 border-2 border-black shadow-[4px_4px_0_rgba(0,0,0,0.1)] hover:-translate-y-1 transition duration-200">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="text-2xl text-stone-400"><i class="fas ${c.icon}"></i></div>
+                    <div class="text-right">
+                        <div class="text-2xl font-black font-mono leading-none">${c.relation.toFixed(0)}%</div>
+                        <div class="text-[8px] uppercase tracking-widest font-bold text-stone-500">Relation</div>
+                    </div>
+                </div>
+                <div class="font-bold text-sm uppercase tracking-wide border-t-2 border-black pt-2 mt-2">${c.name}</div>
+                <div class="text-[9px] text-stone-500 italic mb-1">แนวคิด: ${c.ideology}</div>
+                <div class="w-full bg-stone-200 h-1 mt-1"><div class="h-full ${relationColor}" style="width: ${c.relation}%"></div></div>
+                ${(c.modifiers && c.modifiers.length > 0) ? `
+                <div class="mt-3 pt-2 border-t border-stone-200 space-y-1">
+                    ${c.modifiers.slice(0, 3).map(m => `
+                        <div class="flex justify-between text-[9px] text-stone-500 gap-2">
+                            <span class="truncate">${m.source}</span>
+                            <span class="font-mono whitespace-nowrap ${m.perDay > 0 ? 'text-emerald-700' : 'text-red-700'}">${m.perDay > 0 ? '+' : ''}${(m.perDay * m.remaining).toFixed(0)} · ${Math.ceil(m.remaining)}d</span>
+                        </div>
+                    `).join('')}
+                </div>` : ''}
+                <div class="flex gap-2 mt-3">
+                    <button onclick="engine.diplomaticVisit('${c.id}')" class="flex-1 py-2 text-[10px] font-bold border-2 border-black bg-white hover:bg-black hover:text-white transition uppercase">เยือนทางการทูต (฿20M)</button>
+                    <button onclick="engine.tradeDeal('${c.id}')" class="flex-1 py-2 text-[10px] font-bold border-2 border-black bg-white hover:bg-black hover:text-white transition uppercase ${c.relation < 40 ? 'opacity-40' : ''}">ข้อตกลงการค้า (฿15B)</button>
+                </div>
             </div>
         `;
         }).join("");
