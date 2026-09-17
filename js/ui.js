@@ -45,6 +45,48 @@ export const ui = {
         };
         for (const [id, val] of Object.entries(els)) { const el = document.getElementById(id); if(el) el.innerText = val; }
         const bar = document.getElementById('hud-approval-bar'); if (bar) bar.style.width = `${state.world.approval}%`;
+        // Explainability (Phase 2): a small trend arrow next to the numbers that already have a
+        // "why" breakdown, so the player sees direction before even opening it.
+        const trends = { 'hud-approval-trend': 'approval', 'stat-cabinet-stability-trend': 'cabinetStability', 'stat-growth-trend': 'growth' };
+        for (const [id, key] of Object.entries(trends)) { const el = document.getElementById(id); if (el) el.innerHTML = this.trendArrow(key); }
+    },
+
+    // Explainability (Phase 2): compares the last two monthly snapshots (state.history.*, the
+    // same 6-entry rolling window the trend graphs already use) to a simple up/down/flat icon.
+    // goodDirection follows WORLD_STAT_META's convention: -1 for a stat where rising is bad
+    // (protestPressure), so a growing crisis doesn't render as a cheerful green up-arrow.
+    trendArrow(key, goodDirection = 1) {
+        const h = state.history[key];
+        if (!h || h.length < 2) return '';
+        const delta = h[h.length - 1] - h[h.length - 2];
+        if (Math.abs(delta) < 0.5) return '<i class="fas fa-minus text-stone-400"></i>';
+        const isGood = goodDirection > 0 ? delta > 0 : delta < 0;
+        const cls = isGood ? 'text-emerald-600' : 'text-red-600';
+        return delta > 0 ? `<i class="fas fa-arrow-up ${cls}"></i>` : `<i class="fas fa-arrow-down ${cls}"></i>`;
+    },
+
+    // Explainability (Phase 2): reuses the event-modal to show the ranked factors behind a
+    // number, instead of the player only ever seeing the resulting figure. goodDirection matches
+    // WORLD_STAT_META's convention: +1 means a positive contribution is good (growth, approval,
+    // cabinet stability), -1 means it's bad (protest pressure, where every factor is a problem
+    // piling up, not progress) -- otherwise a rising unrest factor would render in the same
+    // green as a rising approval one, telling the player the opposite of what's true.
+    showWhy(title, breakdown, goodDirection = 1) {
+        this.resetModalState();
+        document.getElementById('event-title').innerText = `ทำไม: ${title}`;
+        const rows = Object.entries(breakdown).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+        let h = `<div class="space-y-2">`;
+        if (rows.length === 0) h += `<div class="italic text-stone-400 text-center">ไม่มีปัจจัยเด่นในขณะนี้</div>`;
+        rows.forEach(([label, val]) => {
+            const isGood = goodDirection > 0 ? val > 0.05 : val < -0.05;
+            const isBad = goodDirection > 0 ? val < -0.05 : val > 0.05;
+            const color = isGood ? 'text-emerald-700' : (isBad ? 'text-red-700' : 'text-stone-400');
+            h += `<div class="flex justify-between border-b border-stone-200 pb-1"><span class="text-sm">${label}</span><span class="font-mono font-bold ${color}">${val > 0 ? '+' : ''}${val.toFixed(1)}</span></div>`;
+        });
+        h += `</div>`;
+        document.getElementById('event-desc').innerHTML = h;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
     },
 
     updateMain() { 
@@ -90,10 +132,10 @@ export const ui = {
         const pressure = state.world.protestPressure;
         const legitimacy = state.world.institutionalLegitimacy;
         pressureCont.innerHTML = `
-            <div class="border-2 border-black p-3">
-                <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-people-group mr-1"></i>แรงกดดันประท้วงสะสม</span><span class="${pressure > 60 ? 'text-red-700' : (pressure > 35 ? 'text-amber-700' : 'text-emerald-700')}">${pressure.toFixed(0)}%</span></div>
+            <button onclick="ui.showWhy('แรงกดดันประท้วงสะสม', engine.getPressureBreakdown(), -1)" class="border-2 border-black p-3 text-left hover:bg-stone-50 transition">
+                <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-people-group mr-1"></i>แรงกดดันประท้วงสะสม ${this.trendArrow('protestPressure', -1)}</span><span class="${pressure > 60 ? 'text-red-700' : (pressure > 35 ? 'text-amber-700' : 'text-emerald-700')}">${pressure.toFixed(0)}%</span></div>
                 <div class="w-full h-2 bg-stone-200 border border-black"><div class="h-full ${pressure > 60 ? 'bg-red-600' : (pressure > 35 ? 'bg-amber-500' : 'bg-emerald-600')}" style="width:${pressure}%"></div></div>
-            </div>
+            </button>
             <div class="border-2 border-black p-3">
                 <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-building-columns mr-1"></i>ความเชื่อถือสถาบัน (ระยะยาว)</span><span class="${legitimacy > 60 ? 'text-emerald-700' : (legitimacy > 40 ? 'text-amber-700' : 'text-red-700')}">${legitimacy.toFixed(0)}%</span></div>
                 <div class="w-full h-2 bg-stone-200 border border-black"><div class="h-full bg-black" style="width:${legitimacy}%"></div></div>

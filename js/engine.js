@@ -57,6 +57,27 @@ function getProvinceContext(prov) {
     return { growthStage, laborCondition };
 }
 
+// Explainability (Phase 2): the same breakdown the formula itself used, handed back out so the
+// UI can show "why" instead of just the resulting number. Pressure and approval are cheap to
+// recompute on demand; growth and cabinetStability are snapshotted once a month instead (see
+// processMonthlyUpdate) since blending them from scratch here would drift from the real value.
+function getPressureBreakdown() {
+    return {
+        "การว่างงานสูงกว่าปกติ": Math.max(0, (state.world.unemployment - 15) * 1.5),
+        "อาชญากรรมสูงกว่าปกติ": Math.max(0, (state.world.crime - 30) * 1.0),
+        "ความนิยมรัฐบาลต่ำ": Math.max(0, (50 - state.world.approval) * 1.2),
+        "ความโปร่งใสต่ำ": Math.max(0, (100 - state.world.transparency) * 0.3)
+    };
+}
+function getApprovalBreakdown() {
+    const rows = {};
+    [...state.factions].sort((a, b) => Math.abs(b.approval - 50) - Math.abs(a.approval - 50)).slice(0, 5)
+        .forEach(f => { rows[f.name] = f.approval - 50; });
+    return rows;
+}
+function getGrowthBreakdown() { return state.world.growthBreakdown || {}; }
+function getCabinetStabilityBreakdown() { return state.world.cabinetStabilityBreakdown || {}; }
+
 // state.speed can advance the calendar by more than 1 day per tick, so periodic checks
 // (day-of-month triggers, month-boundary updates) must detect crossing a mark, not equal it exactly.
 function crossedMonthBoundary(prev, curr) {
@@ -192,7 +213,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown,
 
     init() {
         state.voteModifier = null;
@@ -376,6 +397,14 @@ export const engine = {
 
         const targetGrowth = weightedApproval * 0.16 + (qualityOfLife - 40) * 0.03 + productionBias - (state.world.growthPenalty || 0);
         state.world.growth = state.world.growth + (targetGrowth - state.world.growth) * 0.3 + (Math.random() - 0.5) * 0.4;
+        // Explainability (Phase 2): snapshot this month's terms so the UI can show why growth
+        // moved, ranked by size, instead of just the resulting percentage.
+        state.world.growthBreakdown = {
+            "แรงหนุนจากกลุ่มผลประโยชน์": weightedApproval * 0.16,
+            "คุณภาพชีวิตประชาชน": (qualityOfLife - 40) * 0.03,
+            "ผลผลิตอุตสาหกรรมเทียบฐาน": productionBias,
+            "ผลกระทบวิกฤตเศรษฐกิจล่าสุด": -(state.world.growthPenalty || 0)
+        };
 
         // Trade partners in good standing add a little extra tax revenue on top of domestic growth; souring ones bleed it away
         const totalTradeWeight = state.foreign.reduce((s, c) => s + c.tradeWeight, 0);
@@ -398,6 +427,14 @@ export const engine = {
 
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
         if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
+        // Trend arrows (Phase 2): a short rolling history per stat, same 6-entry window as
+        // approval/budget already use, just so the UI can say "up from last month" not just
+        // show a bare number.
+        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
+            if (!state.history[key]) state.history[key] = [];
+            state.history[key].push(state.world[key]);
+            if (state.history[key].length > 6) state.history[key].shift();
+        });
         const govSeats = state.parties.filter(p => p.status === "Government").reduce((s, p) => s + p.seats, 0);
         // A minister's prestige feeds cabinetStability alongside their base faction's approval:
         // a well-known appointee reassures the public, an unknown backbencher does not.
@@ -405,6 +442,12 @@ export const engine = {
         Object.values(Data.MINISTRIES).forEach(m => { if(m.currentMinister) { const f = state.factions.find(fx => fx.name === m.currentMinister.status); if(f) factionScore += f.approval; prestigeScore += m.currentMinister.prestige ?? 50; minCount++; } });
         const cabinetPrestigeBonus = minCount > 0 ? (prestigeScore / minCount - 50) * 0.15 : 0;
         state.world.cabinetStability = Math.max(0, Math.floor((govSeats / Data.TOTAL_SEATS * 50) + (minCount > 0 ? (factionScore / minCount) * 0.5 : 25) + cabinetPrestigeBonus - (state.world.stabilityPenalty || 0)));
+        state.world.cabinetStabilityBreakdown = {
+            "เสียงข้างมากในสภา": govSeats / Data.TOTAL_SEATS * 50,
+            "ความพอใจกลุ่มที่มีรัฐมนตรี": minCount > 0 ? (factionScore / minCount) * 0.5 : 25,
+            "ชื่อเสียงคณะรัฐมนตรี": cabinetPrestigeBonus,
+            "แรงกดดันจากวิกฤต/เรื่องอื้อฉาว": -(state.world.stabilityPenalty || 0)
+        };
         state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
 
         // Long-term Memory (Phase 1): institutionalLegitimacy moves by at most a few tenths a
