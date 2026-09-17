@@ -157,3 +157,118 @@ export const POLICY_TEMPLATES = [
     { ministry: "คมนาคม", name: "รถไฟฟ้าความเร็วสูง", cost: 1.2e11, delibTime: 90, cooldown: 200, ideology: "โลกาภิวัตน์", goal: "เศรษฐกิจ", target: "ชนชั้นกลาง", impact: { "ชนชั้นกลาง": 20, "สิ่งแวดล้อม": -5 } },
     { ministry: "การต่างประเทศ", name: "เข้าร่วมกรอบการค้าเสรีระดับภูมิภาค", cost: 5e9, delibTime: 45, cooldown: 120, ideology: "โลกาภิวัตน์", goal: "การต่างประเทศ", target: "ทุนข้ามชาติ", impact: { "ทุนข้ามชาติ": 15, "ท้องถิ่น": -8 } }
 ];
+
+// The 6 conventional regions of Thailand, in the order the province map lays them out.
+export const REGIONS = ["เหนือ", "อีสาน", "กลาง", "ตะวันออก", "ตะวันตก", "ใต้"];
+
+// All 77 provinces with their real region and an approximate population (rounded, for gameplay
+// weighting -- not census-precise). Province shapes/borders aren't included: no licensed Thai
+// province boundary dataset was available to bundle locally, so the map groups these by region
+// in a grid instead of tracing real geography.
+export const PROVINCES = [
+    // เหนือ (17)
+    { name: "เชียงใหม่", region: "เหนือ", pop: 1780000 },
+    { name: "เชียงราย", region: "เหนือ", pop: 1290000 },
+    { name: "ลำปาง", region: "เหนือ", pop: 730000 },
+    { name: "ลำพูน", region: "เหนือ", pop: 400000 },
+    { name: "แม่ฮ่องสอน", region: "เหนือ", pop: 250000 },
+    { name: "น่าน", region: "เหนือ", pop: 470000 },
+    { name: "พะเยา", region: "เหนือ", pop: 470000 },
+    { name: "แพร่", region: "เหนือ", pop: 430000 },
+    { name: "อุตรดิตถ์", region: "เหนือ", pop: 440000 },
+    { name: "ตาก", region: "เหนือ", pop: 540000 },
+    { name: "สุโขทัย", region: "เหนือ", pop: 580000 },
+    { name: "พิษณุโลก", region: "เหนือ", pop: 850000 },
+    { name: "พิจิตร", region: "เหนือ", pop: 520000 },
+    { name: "เพชรบูรณ์", region: "เหนือ", pop: 960000 },
+    { name: "กำแพงเพชร", region: "เหนือ", pop: 720000 },
+    { name: "นครสวรรค์", region: "เหนือ", pop: 1010000 },
+    { name: "อุทัยธานี", region: "เหนือ", pop: 320000 },
+    // อีสาน (20)
+    { name: "นครราชสีมา", region: "อีสาน", pop: 2630000 },
+    { name: "ขอนแก่น", region: "อีสาน", pop: 1800000 },
+    { name: "อุดรธานี", region: "อีสาน", pop: 1570000 },
+    { name: "อุบลราชธานี", region: "อีสาน", pop: 1870000 },
+    { name: "บุรีรัมย์", region: "อีสาน", pop: 1580000 },
+    { name: "สุรินทร์", region: "อีสาน", pop: 1370000 },
+    { name: "ศรีสะเกษ", region: "อีสาน", pop: 1450000 },
+    { name: "ร้อยเอ็ด", region: "อีสาน", pop: 1300000 },
+    { name: "มหาสารคาม", region: "อีสาน", pop: 940000 },
+    { name: "กาฬสินธุ์", region: "อีสาน", pop: 980000 },
+    { name: "สกลนคร", region: "อีสาน", pop: 1140000 },
+    { name: "นครพนม", region: "อีสาน", pop: 710000 },
+    { name: "ชัยภูมิ", region: "อีสาน", pop: 1120000 },
+    { name: "ยโสธร", region: "อีสาน", pop: 530000 },
+    { name: "หนองคาย", region: "อีสาน", pop: 520000 },
+    { name: "หนองบัวลำภู", region: "อีสาน", pop: 510000 },
+    { name: "มุกดาหาร", region: "อีสาน", pop: 350000 },
+    { name: "อำนาจเจริญ", region: "อีสาน", pop: 370000 },
+    { name: "เลย", region: "อีสาน", pop: 630000 },
+    { name: "บึงกาฬ", region: "อีสาน", pop: 420000 },
+    // กลาง (14, รวมกรุงเทพฯ)
+    { name: "กรุงเทพมหานคร", region: "กลาง", pop: 5500000 },
+    { name: "นนทบุรี", region: "กลาง", pop: 1300000 },
+    { name: "ปทุมธานี", region: "กลาง", pop: 1200000 },
+    { name: "สมุทรปราการ", region: "กลาง", pop: 1370000 },
+    { name: "นครปฐม", region: "กลาง", pop: 920000 },
+    { name: "สมุทรสาคร", region: "กลาง", pop: 590000 },
+    { name: "สมุทรสงคราม", region: "กลาง", pop: 190000 },
+    { name: "พระนครศรีอยุธยา", region: "กลาง", pop: 830000 },
+    { name: "อ่างทอง", region: "กลาง", pop: 270000 },
+    { name: "ลพบุรี", region: "กลาง", pop: 750000 },
+    { name: "สิงห์บุรี", region: "กลาง", pop: 200000 },
+    { name: "ชัยนาท", region: "กลาง", pop: 320000 },
+    { name: "สระบุรี", region: "กลาง", pop: 640000 },
+    { name: "สุพรรณบุรี", region: "กลาง", pop: 830000 },
+    // ตะวันออก (8)
+    { name: "ชลบุรี", region: "ตะวันออก", pop: 1600000 },
+    { name: "ระยอง", region: "ตะวันออก", pop: 780000 },
+    { name: "จันทบุรี", region: "ตะวันออก", pop: 540000 },
+    { name: "ตราด", region: "ตะวันออก", pop: 230000 },
+    { name: "ฉะเชิงเทรา", region: "ตะวันออก", pop: 720000 },
+    { name: "ปราจีนบุรี", region: "ตะวันออก", pop: 490000 },
+    { name: "นครนายก", region: "ตะวันออก", pop: 260000 },
+    { name: "สระแก้ว", region: "ตะวันออก", pop: 560000 },
+    // ตะวันตก (4)
+    { name: "กาญจนบุรี", region: "ตะวันตก", pop: 900000 },
+    { name: "ราชบุรี", region: "ตะวันตก", pop: 860000 },
+    { name: "เพชรบุรี", region: "ตะวันตก", pop: 480000 },
+    { name: "ประจวบคีรีขันธ์", region: "ตะวันตก", pop: 550000 },
+    // ใต้ (14)
+    { name: "นครศรีธรรมราช", region: "ใต้", pop: 1550000 },
+    { name: "กระบี่", region: "ใต้", pop: 480000 },
+    { name: "พังงา", region: "ใต้", pop: 270000 },
+    { name: "ภูเก็ต", region: "ใต้", pop: 420000 },
+    { name: "สุราษฎร์ธานี", region: "ใต้", pop: 1080000 },
+    { name: "ระนอง", region: "ใต้", pop: 190000 },
+    { name: "ชุมพร", region: "ใต้", pop: 510000 },
+    { name: "สงขลา", region: "ใต้", pop: 1420000 },
+    { name: "สตูล", region: "ใต้", pop: 320000 },
+    { name: "ตรัง", region: "ใต้", pop: 640000 },
+    { name: "พัทลุง", region: "ใต้", pop: 520000 },
+    { name: "ปัตตานี", region: "ใต้", pop: 730000 },
+    { name: "ยะลา", region: "ใต้", pop: 540000 },
+    { name: "นราธิวาส", region: "ใต้", pop: 830000 }
+];
+
+// Regional default candidate factions a province's voters are likely to lean toward,
+// plus explicit overrides for provinces where a regional default would be unrealistic.
+export const REGION_FACTION_POOL = {
+    "เหนือ": ["เกษตรกร", "หัวก้าวหน้า", "ท้องถิ่น"],
+    "อีสาน": ["เกษตรกร", "แรงงาน", "ท้องถิ่น"],
+    "กลาง": ["เกษตรกร", "ชนชั้นกลาง", "ท้องถิ่น"],
+    "ตะวันออก": ["ทุนข้ามชาติ", "แรงงาน", "นายทุน"],
+    "ตะวันตก": ["เกษตรกร", "ท้องถิ่น"],
+    "ใต้": ["อนุรักษ์", "ผู้นำศาสนา", "ท้องถิ่น"]
+};
+export const PROVINCE_FACTION_OVERRIDES = {
+    "กรุงเทพมหานคร": "ชนชั้นกลาง",
+    "เชียงใหม่": "หัวก้าวหน้า",
+    "ภูเก็ต": "ทุนข้ามชาติ",
+    "ชลบุรี": "ทุนข้ามชาติ",
+    "ระยอง": "ทุนข้ามชาติ",
+    "ปัตตานี": "ผู้นำศาสนา",
+    "ยะลา": "ผู้นำศาสนา",
+    "นราธิวาส": "ผู้นำศาสนา",
+    "สตูล": "ผู้นำศาสนา"
+};

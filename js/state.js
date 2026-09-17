@@ -5,6 +5,7 @@ export const state = {
     world: { nationalBudget: 3400000000000, approval: 50, growth: 2.4, cabinetStability: 80, transparency: 100, stabilityPenalty: 0 },
     factions: [],
     foreign: [],
+    provinces: [],
     parties: [],
     leaders: [], 
     activePolicies: [], 

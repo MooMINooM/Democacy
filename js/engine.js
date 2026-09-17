@@ -107,6 +107,7 @@ export const engine = {
         state.foreign = Data.FOREIGN_POWERS.map(c => ({ ...c, relation: 50 + (Math.random() * 20 - 10), modifiers: [] }));
         if(state.parties.length === 0) state.parties = this.generateGameParties();
         this.generateLeaders();
+        if(state.provinces.length === 0) this.generateProvinces();
 
         ui.renderCabinet(); ui.renderMinistryList();
         this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
@@ -144,6 +145,23 @@ export const engine = {
                 });
             }
         });
+    },
+
+    // Splits the 500 seats across all 77 provinces by population (largest-remainder method,
+    // same technique runElection() uses) and assigns each a plausible dominant faction.
+    generateProvinces() {
+        const totalPop = Data.PROVINCES.reduce((s, p) => s + p.pop, 0);
+        const withSeats = Data.PROVINCES.map(p => {
+            const exact = (p.pop / totalPop) * Data.TOTAL_SEATS;
+            return { ...p, seats: Math.floor(exact), remainder: exact - Math.floor(exact) };
+        });
+        const remaining = Data.TOTAL_SEATS - withSeats.reduce((s, p) => s + p.seats, 0);
+        [...withSeats].sort((a, b) => b.remainder - a.remainder).slice(0, remaining).forEach(p => p.seats++);
+
+        state.provinces = withSeats.map(p => ({
+            name: p.name, region: p.region, pop: p.pop, seats: p.seats,
+            baseFaction: Data.PROVINCE_FACTION_OVERRIDES[p.name] || Data.REGION_FACTION_POOL[p.region][Math.floor(Math.random() * Data.REGION_FACTION_POOL[p.region].length)]
+        }));
     },
 
     generateGameParties() {
