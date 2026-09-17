@@ -114,6 +114,43 @@ function getImplementationEffectiveness(p) {
     return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload };
 }
 
+// Economy v2 (Phase 5): what share of the country's actual current output rides on trade versus
+// domestic factors. Every industry has *some* trade term since PR #13/#17, so a binary
+// has-a-partner check would always read 100% and say nothing -- instead this weighs each
+// province's trade coefficient (0.25 for a direct keyIndustry partner, 0.3 for logistics'
+// average-relation link) against that industry's own INDUSTRY_TYPES.sensitivity weights, the
+// same numbers provinceOutput() already uses, so it genuinely varies with the industry mix.
+function getTradeExposure() {
+    let weightedExposure = 0, totalOutput = 0;
+    state.provinces.forEach(prov => {
+        const output = provinceOutput(prov);
+        totalOutput += output;
+        const industry = Data.INDUSTRY_TYPES[prov.industry];
+        if (!industry) return;
+        const domesticWeight = Object.values(industry.sensitivity || {}).reduce((s, w) => s + Math.abs(w), 0);
+        const hasPartner = state.foreign.some(c => c.keyIndustry === prov.industry);
+        const tradeWeight = hasPartner ? 0.25 : (prov.industry === "โลจิสติกส์และการส่งออก" ? 0.3 : 0);
+        const exposureShare = (tradeWeight + domesticWeight) > 0 ? tradeWeight / (tradeWeight + domesticWeight) : 0;
+        weightedExposure += output * exposureShare;
+    });
+    return totalOutput > 0 ? weightedExposure / totalOutput : 0;
+}
+// Which industries are over- or under-performing the national per-capita baseline right now,
+// in the same +/- format as growthBreakdown -- drills into growthBreakdown's single
+// "ผลผลิตอุตสาหกรรมเทียบฐาน" line to show which specific industries are driving it.
+function getProductionBreakdown() {
+    const rows = {};
+    Object.entries(Data.INDUSTRY_TYPES).forEach(([ind, meta]) => {
+        const provs = state.provinces.filter(p => p.industry === ind);
+        if (provs.length === 0) return;
+        const output = provs.reduce((s, p) => s + provinceOutput(p), 0);
+        const pop = provs.reduce((s, p) => s + p.pop, 0);
+        const perCapita = output / pop;
+        rows[meta.label] = state.world.baseProductionPerCapita ? (perCapita / state.world.baseProductionPerCapita - 1) * 10 : 0;
+    });
+    return rows;
+}
+
 // state.speed can advance the calendar by more than 1 day per tick, so periodic checks
 // (day-of-month triggers, month-boundary updates) must detect crossing a mark, not equal it exactly.
 function crossedMonthBoundary(prev, curr) {
@@ -253,7 +290,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown,
 
     init() {
         state.voteModifier = null;
@@ -446,6 +483,18 @@ export const engine = {
             "ผลผลิตอุตสาหกรรมเทียบฐาน": productionBias,
             "ผลกระทบวิกฤตเศรษฐกิจล่าสุด": -(state.world.growthPenalty || 0)
         };
+
+        // Economy v2 (Phase 5): industries have only ever been on the receiving end of
+        // unemployment (INDUSTRY_TYPES.sensitivity), never fed back into it -- a border conflict
+        // or bad trade relation could tank an industry's output with zero effect on the national
+        // unemployment rate it's itself sensitive to. Reuses productionBias (already computed
+        // above for growth) through the same decaying-modifier channel every policy already uses.
+        // Replaces its own previous entry each month instead of adding a new one on top of it --
+        // industries are sensitive to unemployment too, so a naive monthly push here would stack
+        // unboundedly into a runaway spiral (confirmed in testing: unemployment hit 80%+ within a
+        // few years of otherwise-idle play before this fix) instead of tracking the current state.
+        state.world.statMods.unemployment = (state.world.statMods.unemployment || []).filter(m => m.source !== "ผลผลิตอุตสาหกรรมรวมของประเทศ");
+        this.applyWorldStatImpact("unemployment", -productionBias * 0.3, "ผลผลิตอุตสาหกรรมรวมของประเทศ", 45);
 
         // Trade partners in good standing add a little extra tax revenue on top of domestic growth; souring ones bleed it away
         const totalTradeWeight = state.foreign.reduce((s, c) => s + c.tradeWeight, 0);

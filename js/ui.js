@@ -104,6 +104,7 @@ export const ui = {
         this.renderMiniFactions();
         this.renderNationalStats();
         this.renderContextPanel();
+        this.renderEconomyPanel();
     },
 
     // Dynamic Context Engine (Phase 1): shows the derived situational labels and the two new
@@ -140,6 +141,20 @@ export const ui = {
                 <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-building-columns mr-1"></i>ความเชื่อถือสถาบัน (ระยะยาว)</span><span class="${legitimacy > 60 ? 'text-emerald-700' : (legitimacy > 40 ? 'text-amber-700' : 'text-red-700')}">${legitimacy.toFixed(0)}%</span></div>
                 <div class="w-full h-2 bg-stone-200 border border-black"><div class="h-full bg-black" style="width:${legitimacy}%"></div></div>
             </div>`;
+    },
+
+    // Economy v2 (Phase 5): what share of current output rides on foreign relations, and which
+    // industries are driving growthBreakdown's "ผลผลิตอุตสาหกรรมเทียบฐาน" line up or down --
+    // both pure aggregates over data provinceOutput() already computes, surfaced for the player.
+    renderEconomyPanel() {
+        const cont = document.getElementById('economy-panel'); if (!cont) return;
+        const exposure = engine.getTradeExposure() * 100;
+        cont.innerHTML = `
+            <button onclick="ui.showWhy('ผลผลิตอุตสาหกรรมเทียบฐาน (ตามภาค)', engine.getProductionBreakdown())" class="border-2 border-black p-3 text-left hover:bg-stone-50 transition">
+                <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-earth-asia mr-1"></i>สัดส่วนผลผลิตที่พึ่งพาการค้าต่างประเทศ</span><span class="${exposure > 60 ? 'text-amber-700' : 'text-stone-700'}">${exposure.toFixed(0)}%</span></div>
+                <div class="w-full h-2 bg-stone-200 border border-black"><div class="h-full bg-blue-600" style="width:${exposure}%"></div></div>
+                <div class="text-[9px] text-stone-500 mt-2">คลิกดูว่าอุตสาหกรรมภาคไหนกำลังดันหรือฉุดผลผลิตของประเทศ</div>
+            </button>`;
     },
 
     renderNationalStats() {
