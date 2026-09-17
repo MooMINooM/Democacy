@@ -359,7 +359,8 @@ export const ui = {
             </div>
             <div class="mt-4 pt-3 border-t-2 border-black">
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-1"><span>ระดับการลงทุน</span><span>${investLevel.toFixed(0)}%</span></div>
-                <div class="w-full h-2 bg-stone-200 border border-black mb-3"><div class="h-full bg-emerald-600" style="width:${investLevel}%"></div></div>
+                <div class="w-full h-2 bg-stone-200 border border-black mb-2"><div class="h-full bg-emerald-600" style="width:${investLevel}%"></div></div>
+                <div class="text-[9px] text-stone-500 mb-3 leading-relaxed">ลงทุนสูงกว่า 50% ช่วยผลผลิตและเพิ่มคะแนนเสียงให้พรรครัฐบาลในเขตนี้ตอนเลือกตั้ง ปล่อยให้ต่ำกว่า 50% จะถูกลงโทษที่คูหาเช่นกัน</div>
                 <button onclick="engine.investProvince('${p.name}')" class="w-full py-2 text-[10px] font-bold border-2 border-black bg-white hover:bg-black hover:text-white transition uppercase">ลงทุนพัฒนาอุตสาหกรรม (฿2B งบชาติ)</button>
             </div>
             ${p.lastResult ? `

@@ -557,9 +557,15 @@ export const engine = {
 
         state.provinces.forEach(prov => {
             const affinity = Data.FACTION_IDEOLOGY_AFFINITY[prov.baseFaction];
+            // investProvince() spends national budget to push investmentLevel above its 50
+            // baseline; a neglected province (left to drift below 50) punishes the incumbent
+            // the same way. Scaled to match the affinity bonus (+/-25 at the extremes) so
+            // pork-barrel spending is a real electoral lever, not just an economic one.
+            const investmentSwing = ((prov.investmentLevel ?? 50) - 50) * 0.5;
             const weights = state.parties.map(p => {
                 const bonus = affinity && p.ideologies.includes(affinity) ? 25 : 0;
-                return { party: p, weight: Math.max(1, p.popularity + bonus + (Math.random() * 10 - 5)) };
+                const govBonus = p.status === "Government" ? investmentSwing : 0;
+                return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + (Math.random() * 10 - 5)) };
             });
             const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
             const provinceResult = {};
