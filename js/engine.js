@@ -38,6 +38,25 @@ function provinceOutput(prov) {
     return prov.pop * industry.baseOutput * Math.max(0.3, multiplier);
 }
 
+// Dynamic Context Engine (Phase 1): a pure read-only classification layer over stats that
+// already exist, not new stored state. Actions and UI read these labels instead of raw numbers
+// so the same action can be told apart by the situation it happened in -- Same Action, Same
+// Numbers, Different Context, Different Result.
+function getNationalContext() {
+    const economicCycle = state.world.growth > 4 ? "Boom" : state.world.growth > 0.5 ? "Expansion" : state.world.growth > -2 ? "Slowdown" : "Recession";
+    const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+    const politicalClimate = state.world.cabinetStability < 40 ? "Crisis" : daysToElection <= 90 ? "Election Mode" : (state.world.approval >= 35 && state.world.approval <= 50) ? "Polarized" : "Stable";
+    const budgetTrend = state.history.budget.length >= 2 ? state.history.budget[state.history.budget.length - 1] - state.history.budget[0] : 0;
+    const fiscalCondition = budgetTrend < 0 ? "Debt Stress" : budgetTrend < state.world.nationalBudget * 0.01 ? "Tight" : budgetTrend < state.world.nationalBudget * 0.05 ? "Normal" : "Surplus";
+    return { economicCycle, politicalClimate, fiscalCondition };
+}
+function getProvinceContext(prov) {
+    const inv = prov.investmentLevel ?? 50;
+    const growthStage = inv >= 85 ? "Saturated" : inv >= 55 ? "Growing" : inv >= 30 ? "Emerging" : "Declining";
+    const laborCondition = state.world.unemployment < 15 ? "Shortage" : state.world.unemployment < 25 ? "Balanced" : "Surplus";
+    return { growthStage, laborCondition };
+}
+
 // state.speed can advance the calendar by more than 1 day per tick, so periodic checks
 // (day-of-month triggers, month-boundary updates) must detect crossing a mark, not equal it exactly.
 function crossedMonthBoundary(prev, curr) {
@@ -65,7 +84,23 @@ export const gameClock = {
         state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
         state.world.stabilityPenalty = Math.max(0, (state.world.stabilityPenalty || 0) - 0.5 * state.speed);
         state.world.growthPenalty = Math.max(0, (state.world.growthPenalty || 0) - 0.15 * state.speed);
-        state.leaders.forEach(l => { if (l.switchCooldown > 0) l.switchCooldown -= state.speed; });
+        state.leaders.forEach(l => {
+            if (l.switchCooldown > 0) l.switchCooldown -= state.speed;
+            // Saturation (Phase 1): contacting the same MP too often fades in value over ~3-4
+            // weeks, same rhythm as the decaying modifiers everywhere else in the game.
+            l.lobbySaturation = Math.max(0, (l.lobbySaturation || 0) - 1.2 * state.speed);
+        });
+
+        // Protest Pressure (Phase 1): a visible, structural buildup -- unemployment, crime, low
+        // approval and low transparency all feed it -- instead of a blind dice roll, so the
+        // player can see unrest coming before it erupts (randomness then only decides *when*).
+        const targetPressure = Math.max(0, Math.min(100,
+            (state.world.unemployment - 15) * 1.5 +
+            (state.world.crime - 30) * 1.0 +
+            (50 - state.world.approval) * 1.2 +
+            (100 - state.world.transparency) * 0.3
+        ));
+        state.world.protestPressure = Math.max(0, Math.min(100, state.world.protestPressure + (targetPressure - state.world.protestPressure) * 0.05 * state.speed));
 
         if(crossedDayOfMonth(prevDate, state.date, 15) && Math.random() < 0.1) engine.aiPropose();
         if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
@@ -74,8 +109,9 @@ export const gameClock = {
         // tick() fires once per real second regardless of state.speed, but each tick now covers
         // `state.speed` in-game days -- so every random-event check below is scaled by state.speed
         // too, or a player idling at 3x would silently see ~3x fewer crises/incidents per in-game
-        // year than one at 1x, purely as a side effect of the speed toggle.
-        if(Math.random() < 0.02 * state.speed) engine.triggerCrisis();
+        // year than one at 1x, purely as a side effect of the speed toggle. The crisis roll also
+        // now reads protestPressure: pressure changes the odds, not just the aftermath.
+        if(Math.random() < (0.01 + (state.world.protestPressure / 100) * 0.03) * state.speed) engine.triggerCrisis();
         if(state.world.transparency < 40 && Math.random() < 0.05 * state.speed) {
              const army = state.factions.find(f => f.name === "กองทัพ");
              if(army && army.approval < 50) engine.triggerCoup();
@@ -94,6 +130,7 @@ export const gameClock = {
             (prov.modifiers || []).forEach(m => { prov.investmentLevel = Math.max(0, Math.min(100, prov.investmentLevel + m.perDay * state.speed)); m.remaining -= state.speed; });
             prov.modifiers = (prov.modifiers || []).filter(m => m.remaining > 0);
             prov.investmentLevel = Math.max(0, Math.min(100, prov.investmentLevel + (50 - prov.investmentLevel) * 0.003 * state.speed));
+            prov.investSaturation = Math.max(0, (prov.investSaturation || 0) - 0.8 * state.speed);
         });
 
         state.factions.forEach(f => {
@@ -115,6 +152,7 @@ export const gameClock = {
             const govIdeo = state.player.party?.ideologies?.[0];
             const align = ideologiesConflict(c.ideology, govIdeo) ? -0.06 : (c.ideology === govIdeo ? 0.06 : 0);
             c.relation = Math.max(0, Math.min(100, c.relation + (Math.random() - 0.5) * 0.8 + align * state.speed));
+            c.visitSaturation = Math.max(0, (c.visitSaturation || 0) - 1 * state.speed);
         });
         if (Math.random() < 0.01 * state.speed) {
             const grudge = state.foreign.find(c => c.relation < 20);
@@ -130,6 +168,11 @@ export const gameClock = {
         state.parties.forEach(p => {
             let target = p.status === "Government" ? state.world.approval : (p.status === "Opposition" ? 100 - state.world.approval : 50);
             if (p.id === state.player.party.id) target += (state.world.transparency - 100) * 0.15;
+            // Long-term Memory (Phase 1): institutionalLegitimacy moves by tenths of a point a
+            // month (see processMonthlyUpdate), so years of instability drag every party's
+            // popularity ceiling down slowly -- a "the system has lost trust" effect that a
+            // 60-day modifier could never represent.
+            target += (state.world.institutionalLegitimacy - 70) * 0.1;
             p.popularity = Math.max(0, Math.min(100, p.popularity + (target - p.popularity) * 0.01 * state.speed + (Math.random() - 0.5) * 0.3 * state.speed));
         });
 
@@ -149,6 +192,8 @@ export const gameClock = {
 };
 
 export const engine = {
+    getNationalContext, getProvinceContext,
+
     init() {
         state.voteModifier = null;
         state.world.transparency = 100;
@@ -362,6 +407,14 @@ export const engine = {
         state.world.cabinetStability = Math.max(0, Math.floor((govSeats / Data.TOTAL_SEATS * 50) + (minCount > 0 ? (factionScore / minCount) * 0.5 : 25) + cabinetPrestigeBonus - (state.world.stabilityPenalty || 0)));
         state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
 
+        // Long-term Memory (Phase 1): institutionalLegitimacy moves by at most a few tenths a
+        // month -- unlike every decaying modifier in the game (30-90 days), sustained low
+        // transparency or cabinet instability takes years to meaningfully erode it, and years of
+        // clean, stable government takes just as long to rebuild it. This is the "the system has
+        // a reputation across terms, not just this month" layer.
+        const legitimacyPressure = (state.world.transparency < 50 ? -0.15 : 0.05) + (state.world.cabinetStability < 40 ? -0.2 : 0.02);
+        state.world.institutionalLegitimacy = Math.max(0, Math.min(100, state.world.institutionalLegitimacy + legitimacyPressure));
+
         const positionIncome = { "นายกรัฐมนตรี": 20000000, "หัวหน้าพรรค": 12000000, "สส. เขต": 6000000 }[state.player.position] || 6000000;
         state.player.personalFunds += positionIncome;
         this.addNews("รายรับประจำเดือน", `ท่านได้รับเงินเดือนและผลตอบแทนตำแหน่ง ฿${(positionIncome/1e6).toFixed(0)}M`);
@@ -377,14 +430,20 @@ export const engine = {
         const cost = 2000000 * mp.trait.socio.costMod * trustMod; // Richer people cost more to lobby; a burned relationship costs more too
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
         state.player.personalFunds -= cost;
-        mp.loyalty = Math.min(100, mp.loyalty + 15);
-        mp.trust = Math.min(100, mp.trust + 8);
-        this.addNews(`ล็อบบี้สำเร็จ: ${mp.name}`, `ความสัมพันธ์ดีขึ้น (+15 Loyalty)`);
-        
+        // Saturation (Phase 1): contacting the same MP over and over gets less effective each
+        // time -- first call full effect, repeated calls fade toward zero -- and past a point
+        // it starts reading as suspicious instead of friendly.
+        const satMultiplier = 1 - (mp.lobbySaturation || 0) / 100;
+        mp.loyalty = Math.min(100, mp.loyalty + 15 * satMultiplier);
+        mp.trust = Math.min(100, mp.trust + 8 * satMultiplier - ((mp.lobbySaturation || 0) > 70 ? 5 : 0));
+        mp.lobbySaturation = Math.min(100, (mp.lobbySaturation || 0) + 35);
+        const satNote = satMultiplier < 0.5 ? " (ติดต่อถี่เกินไป ผลลดลงมาก)" : "";
+        this.addNews(`ล็อบบี้สำเร็จ: ${mp.name}`, `ความสัมพันธ์ดีขึ้น (+${(15 * satMultiplier).toFixed(0)} Loyalty)${satNote}`);
+
         // --- UI FEEDBACK ---
         ui.showFeedback('lobby', true, mp.name, () => {
             ui.updateMain();
-            ui.showMPActionModal(mpId); 
+            ui.showMPActionModal(mpId);
         });
     },
 
@@ -458,7 +517,11 @@ export const engine = {
     },
 
     triggerCrisis() {
-        const type = Math.random() > 0.5 ? "Economic" : "Protest";
+        // Which kind of crisis fires is itself context-read now: high protestPressure biases
+        // toward Protest, not a flat coin flip -- the buildup the player already saw explains
+        // which crisis showed up, instead of it looking arbitrary.
+        const protestChance = 0.3 + (state.world.protestPressure / 100) * 0.5;
+        const type = Math.random() < protestChance ? "Protest" : "Economic";
         if (type === "Economic") {
             // Mirrors the Protest branch's stabilityPenalty: a temporary, decaying drag (via
             // tick()'s growthPenalty decay) instead of a permanent subtraction, so repeated
@@ -469,6 +532,9 @@ export const engine = {
         } else {
             state.world.stabilityPenalty = Math.min(50, (state.world.stabilityPenalty || 0) + 15);
             state.world.cabinetStability = Math.max(0, state.world.cabinetStability - 15);
+            // The protest itself lets off some of the pressure that built up to cause it,
+            // instead of the same bubble immediately re-triggering another one next tick.
+            state.world.protestPressure = Math.max(0, state.world.protestPressure - 35);
             this.addNews("ม็อบลงถนนขับไล่รัฐบาล!", "ประชาชนชุมนุมใหญ่ เรียกร้องให้ยุบสภา");
         }
         ui.updateMain();
@@ -552,7 +618,10 @@ export const engine = {
         const cost = 20000000;
         if (state.player.personalFunds < cost) { alert(`เงินไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
         state.player.personalFunds -= cost;
-        c.relation = Math.min(100, c.relation + 12);
+        // Saturation: repeat state visits with no time between them read as routine, not special.
+        const satMultiplier = 1 - (c.visitSaturation || 0) / 100;
+        c.relation = Math.min(100, c.relation + 12 * satMultiplier);
+        c.visitSaturation = Math.min(100, (c.visitSaturation || 0) + 30);
         this.addNews(`เยือน${c.name}อย่างเป็นทางการ`, `ความสัมพันธ์ทางการทูตกับ${c.name}ดีขึ้น`);
         ui.updateMain(); ui.renderForeignList();
     },
@@ -647,11 +716,21 @@ export const engine = {
         if (isShift) {
             prov.industry = targetIndustry;
             prov.investmentLevel = 25;
+            prov.investSaturation = 0;
             this.addNews(`ปรับโครงสร้างเศรษฐกิจ${prov.name}`, `รัฐบาลผลักดันให้${prov.name}ปรับทิศทางสู่${Data.INDUSTRY_TYPES[targetIndustry]?.label}`);
         } else {
+            // Context (growthStage): a province already near its investment ceiling gets less
+            // out of the same money -- the worked example from the design doc, where 50->70
+            // is still worth it but 90+ isn't, without a separate bottleneck fix.
+            const { growthStage } = getProvinceContext(prov);
+            const contextMultiplier = growthStage === "Saturated" ? 0.4 : growthStage === "Growing" ? 0.85 : 1;
+            // Saturation: investing in the same province back-to-back fades over ~5 weeks.
+            const satMultiplier = 1 - (prov.investSaturation || 0) / 100;
             if (!prov.modifiers) prov.modifiers = [];
-            prov.modifiers.push({ source: "ลงทุนพัฒนาอุตสาหกรรม", perDay: 30 / 60, remaining: 60 });
-            this.addNews(`ลงทุนพัฒนา${prov.name}`, `รัฐบาลอัดฉีดงบพัฒนาอุตสาหกรรม${Data.INDUSTRY_TYPES[prov.industry]?.label || ''}ในพื้นที่`);
+            prov.modifiers.push({ source: "ลงทุนพัฒนาอุตสาหกรรม", perDay: (30 / 60) * contextMultiplier * satMultiplier, remaining: 60 });
+            prov.investSaturation = Math.min(100, (prov.investSaturation || 0) + 30);
+            const note = growthStage === "Saturated" ? " (จังหวัดนี้ลงทุนอิ่มตัวแล้ว ผลลดลงมาก)" : "";
+            this.addNews(`ลงทุนพัฒนา${prov.name}`, `รัฐบาลอัดฉีดงบพัฒนาอุตสาหกรรม${Data.INDUSTRY_TYPES[prov.industry]?.label || ''}ในพื้นที่${note}`);
         }
         ui.updateMain(); ui.showProvinceDetail(prov.name);
     },

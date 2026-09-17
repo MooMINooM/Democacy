@@ -61,6 +61,43 @@ export const ui = {
         this.renderTrendGraphs();
         this.renderMiniFactions();
         this.renderNationalStats();
+        this.renderContextPanel();
+    },
+
+    // Dynamic Context Engine (Phase 1): shows the derived situational labels and the two new
+    // slow-moving Phase 1 gauges, so the player can see *why* an action might land differently
+    // today than it did a year ago, and see unrest building before it erupts.
+    renderContextPanel() {
+        const contextCont = document.getElementById('context-panel');
+        const pressureCont = document.getElementById('pressure-panel');
+        if (!contextCont || !pressureCont) return;
+        const ctx = engine.getNationalContext();
+        const ECONOMIC_LABELS = { Boom: ["เฟื่องฟู", "text-emerald-700"], Expansion: ["ขยายตัว", "text-emerald-700"], Slowdown: ["ชะลอตัว", "text-amber-700"], Recession: ["ถดถอย", "text-red-700"] };
+        const POLITICAL_LABELS = { Crisis: ["วิกฤต", "text-red-700"], "Election Mode": ["ใกล้เลือกตั้ง", "text-amber-700"], Polarized: ["แตกขั้ว", "text-amber-700"], Stable: ["มั่นคง", "text-emerald-700"] };
+        const FISCAL_LABELS = { "Debt Stress": ["งบตึงมาก", "text-red-700"], Tight: ["งบตึง", "text-amber-700"], Normal: ["ปกติ", "text-stone-700"], Surplus: ["เกินดุล", "text-emerald-700"] };
+        const tiles = [
+            { icon: "fa-chart-line", label: "วัฏจักรเศรษฐกิจ", val: ECONOMIC_LABELS[ctx.economicCycle] },
+            { icon: "fa-landmark", label: "บรรยากาศการเมือง", val: POLITICAL_LABELS[ctx.politicalClimate] },
+            { icon: "fa-coins", label: "สถานะการคลัง", val: FISCAL_LABELS[ctx.fiscalCondition] }
+        ];
+        contextCont.innerHTML = tiles.map(t => `
+            <div class="border-2 border-black p-3 text-center">
+                <i class="fas ${t.icon} text-lg text-stone-400 mb-1"></i>
+                <div class="text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1">${t.label}</div>
+                <div class="text-sm font-black ${t.val[1]}">${t.val[0]}</div>
+            </div>`).join('');
+
+        const pressure = state.world.protestPressure;
+        const legitimacy = state.world.institutionalLegitimacy;
+        pressureCont.innerHTML = `
+            <div class="border-2 border-black p-3">
+                <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-people-group mr-1"></i>แรงกดดันประท้วงสะสม</span><span class="${pressure > 60 ? 'text-red-700' : (pressure > 35 ? 'text-amber-700' : 'text-emerald-700')}">${pressure.toFixed(0)}%</span></div>
+                <div class="w-full h-2 bg-stone-200 border border-black"><div class="h-full ${pressure > 60 ? 'bg-red-600' : (pressure > 35 ? 'bg-amber-500' : 'bg-emerald-600')}" style="width:${pressure}%"></div></div>
+            </div>
+            <div class="border-2 border-black p-3">
+                <div class="flex justify-between text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1"><span><i class="fas fa-building-columns mr-1"></i>ความเชื่อถือสถาบัน (ระยะยาว)</span><span class="${legitimacy > 60 ? 'text-emerald-700' : (legitimacy > 40 ? 'text-amber-700' : 'text-red-700')}">${legitimacy.toFixed(0)}%</span></div>
+                <div class="w-full h-2 bg-stone-200 border border-black"><div class="h-full bg-black" style="width:${legitimacy}%"></div></div>
+            </div>`;
     },
 
     renderNationalStats() {
@@ -373,8 +410,11 @@ export const ui = {
                     ${(Data.REGION_ELIGIBLE_INDUSTRIES[p.region] || []).map(ind => {
                         const meta = Data.INDUSTRY_TYPES[ind]; if (!meta) return '';
                         const isCurrent = ind === p.industry;
+                        const GROWTH_STAGE_LABELS = { Saturated: "อิ่มตัวแล้ว ผลลดลงมาก", Growing: "กำลังเติบโต", Emerging: "เพิ่งเริ่มต้น", Declining: "ทรุดตัว" };
+                        const growthNote = isCurrent ? GROWTH_STAGE_LABELS[engine.getProvinceContext(p).growthStage] : '';
+                        const satNote = isCurrent && (p.investSaturation || 0) > 0 ? ` &middot; ผลเหลือ ${(100 - (p.investSaturation || 0)).toFixed(0)}%` : '';
                         return `<button onclick="engine.investProvince('${p.name}', '${ind}')" class="w-full flex items-center justify-between py-2 px-3 text-[10px] font-bold border-2 border-black uppercase transition ${isCurrent ? 'bg-black text-white' : 'bg-white hover:bg-stone-100'}">
-                            <span><i class="fas ${meta.icon} mr-1.5"></i>${isCurrent ? 'ลงทุนเพิ่ม' : 'ปรับเป็น'}: ${meta.label}</span>
+                            <span><i class="fas ${meta.icon} mr-1.5"></i>${isCurrent ? 'ลงทุนเพิ่ม' : 'ปรับเป็น'}: ${meta.label}${growthNote ? ` (${growthNote}${satNote})` : ''}</span>
                             <span>฿${isCurrent ? '2' : '6'}B</span>
                         </button>`;
                     }).join('')}
@@ -620,7 +660,7 @@ export const ui = {
                     <h3 class="font-bold text-sm uppercase tracking-widest border-b-2 border-black pb-2 mb-4">Operations</h3>
                     <div class="grid grid-cols-1 gap-3">
                         <button onclick="engine.lobbyIndividual(${l.id})" class="flex justify-between items-center p-4 border-2 border-black hover:bg-stone-100 transition group">
-                            <div class="text-left"><div class="font-bold text-sm group-hover:underline">Lobbying</div><div class="text-[9px] text-stone-500 uppercase">Improve Relations</div></div>
+                            <div class="text-left"><div class="font-bold text-sm group-hover:underline">Lobbying</div><div class="text-[9px] text-stone-500 uppercase">Improve Relations${(l.lobbySaturation || 0) > 0 ? ` &middot; ผลเหลือ ${(100 - (l.lobbySaturation || 0)).toFixed(0)}%` : ''}</div></div>
                             <div class="font-mono font-bold text-xs">฿${(lobbyCost/1e6).toFixed(1)}M</div>
                         </button>
                         <button onclick="engine.buyCobra(${l.id})" ${l.party.id === state.player.party.id ? 'disabled class="opacity-50 flex justify-between items-center p-4 border-2 border-stone-300"' : 'class="flex justify-between items-center p-4 border-2 border-black hover:bg-red-50 transition group"'} >
