@@ -307,3 +307,40 @@ export const FACTION_IDEOLOGY_AFFINITY = {
     "ท้องถิ่น": "การแยกตัว",
     "ข้าราชการ": "อนุรักษ์นิยม"
 };
+
+// Each province's primary industry, driving the production side of the economy
+// (js/engine.js's provinceOutput()) alongside the approval-driven growth formula that
+// already existed. sensitivity ties an industry's output to the national stats added in
+// Phase 4: a positive weight means the industry does better when that stat is high, a
+// negative weight means it does better when that stat is low.
+export const INDUSTRY_TYPES = {
+    "เกษตรกรรม": { icon: "fa-wheat-awn", label: "เกษตรกรรม", baseOutput: 1.0, sensitivity: { environment: 0.4, unemployment: -0.2 } },
+    "อุตสาหกรรม": { icon: "fa-industry", label: "อุตสาหกรรม", baseOutput: 1.8, sensitivity: { education: 0.3, unemployment: -0.3 } },
+    "การท่องเที่ยว": { icon: "fa-umbrella-beach", label: "การท่องเที่ยว", baseOutput: 1.4, sensitivity: { crime: -0.4 } },
+    "เทคโนโลยี": { icon: "fa-microchip", label: "เทคโนโลยี", baseOutput: 2.2, sensitivity: { education: 0.5 } },
+    "ประมง": { icon: "fa-fish", label: "ประมงและทะเล", baseOutput: 1.0, sensitivity: { environment: 0.3 } }
+};
+export const REGION_INDUSTRY_DEFAULT = {
+    "เหนือ": "เกษตรกรรม",
+    "อีสาน": "เกษตรกรรม",
+    "กลาง": "เกษตรกรรม",
+    "ตะวันออก": "อุตสาหกรรม",
+    "ตะวันตก": "เกษตรกรรม",
+    "ใต้": "ประมง"
+};
+export const PROVINCE_INDUSTRY_OVERRIDES = {
+    "กรุงเทพมหานคร": "เทคโนโลยี",
+    "นนทบุรี": "เทคโนโลยี",
+    "ปทุมธานี": "เทคโนโลยี",
+    "สมุทรปราการ": "อุตสาหกรรม",
+    "ภูเก็ต": "การท่องเที่ยว",
+    "กระบี่": "การท่องเที่ยว",
+    "พังงา": "การท่องเที่ยว",
+    "สุราษฎร์ธานี": "การท่องเที่ยว",
+    "ชลบุรี": "อุตสาหกรรม",
+    "ระยอง": "อุตสาหกรรม",
+    "ฉะเชิงเทรา": "อุตสาหกรรม",
+    "ปราจีนบุรี": "อุตสาหกรรม",
+    "เชียงใหม่": "การท่องเที่ยว",
+    "เชียงราย": "การท่องเที่ยว"
+};

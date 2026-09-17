@@ -12,6 +12,18 @@ function ideologiesConflict(a, b) {
 // A faction's rough weight in the national economy: how many people, how well-off they are.
 function factionOutput(f) { return f.basePop * f.wealth; }
 
+// A province's actual production, given its industry's base output, the national stats that
+// industry is sensitive to (Phase 4), and however much investment has built up there.
+function provinceOutput(prov) {
+    const industry = Data.INDUSTRY_TYPES[prov.industry] || Data.INDUSTRY_TYPES["เกษตรกรรม"];
+    let multiplier = 1 + ((prov.investmentLevel ?? 50) - 50) / 50 * 0.4;
+    Object.entries(industry.sensitivity || {}).forEach(([stat, weight]) => {
+        const val = state.world[stat] ?? 50;
+        multiplier += ((val - 50) / 50) * weight;
+    });
+    return prov.pop * industry.baseOutput * Math.max(0.3, multiplier);
+}
+
 // state.speed can advance the calendar by more than 1 day per tick, so periodic checks
 // (day-of-month triggers, month-boundary updates) must detect crossing a mark, not equal it exactly.
 function crossedMonthBoundary(prev, curr) {
@@ -57,6 +69,12 @@ export const gameClock = {
             mods.forEach(m => { state.world[stat] = Math.max(0, Math.min(100, state.world[stat] + m.perDay * state.speed)); m.remaining -= state.speed; });
             state.world.statMods[stat] = mods.filter(m => m.remaining > 0);
             state.world[stat] = Math.max(0, Math.min(100, state.world[stat] + (meta.baseline - state.world[stat]) * 0.002 * state.speed + (Math.random() - 0.5) * 0.1 * state.speed));
+        });
+
+        state.provinces.forEach(prov => {
+            (prov.modifiers || []).forEach(m => { prov.investmentLevel = Math.max(0, Math.min(100, prov.investmentLevel + m.perDay * state.speed)); m.remaining -= state.speed; });
+            prov.modifiers = (prov.modifiers || []).filter(m => m.remaining > 0);
+            prov.investmentLevel = Math.max(0, Math.min(100, prov.investmentLevel + (50 - prov.investmentLevel) * 0.003 * state.speed));
         });
 
         state.factions.forEach(f => {
@@ -175,8 +193,15 @@ export const engine = {
 
         state.provinces = withSeats.map(p => ({
             name: p.name, region: p.region, pop: p.pop, seats: p.seats,
-            baseFaction: Data.PROVINCE_FACTION_OVERRIDES[p.name] || Data.REGION_FACTION_POOL[p.region][Math.floor(Math.random() * Data.REGION_FACTION_POOL[p.region].length)]
+            baseFaction: Data.PROVINCE_FACTION_OVERRIDES[p.name] || Data.REGION_FACTION_POOL[p.region][Math.floor(Math.random() * Data.REGION_FACTION_POOL[p.region].length)],
+            industry: Data.PROVINCE_INDUSTRY_OVERRIDES[p.name] || Data.REGION_INDUSTRY_DEFAULT[p.region],
+            investmentLevel: 50, modifiers: []
         }));
+
+        // Capture today's production-per-capita as the neutral reference point, so growth is only
+        // biased once industries actually out- or under-perform this starting mix -- not by the mix itself.
+        const totalProduction = state.provinces.reduce((s, prov) => s + provinceOutput(prov), 0);
+        state.world.baseProductionPerCapita = totalProduction / totalPop;
     },
 
     generateGameParties() {
@@ -270,7 +295,16 @@ export const engine = {
         // this is the other half of the policy web: worldImpact stats feed back into growth,
         // not just faction approval.
         const qualityOfLife = (state.world.health + state.world.education + (100 - state.world.crime) + state.world.environment) / 4 - state.world.unemployment;
-        const targetGrowth = weightedApproval * 0.16 + (qualityOfLife - 40) * 0.03;
+
+        // Provincial production (Phase 5): how much the country's actual industries are putting
+        // out right now versus the day the game started, driven by each province's industry type,
+        // the national stats it's sensitive to, and any investment poured into it.
+        const totalPop = state.provinces.reduce((s, p) => s + p.pop, 0);
+        const totalProduction = state.provinces.reduce((s, prov) => s + provinceOutput(prov), 0);
+        const productionPerCapita = totalProduction / totalPop;
+        const productionBias = state.world.baseProductionPerCapita ? (productionPerCapita / state.world.baseProductionPerCapita - 1) * 8 : 0;
+
+        const targetGrowth = weightedApproval * 0.16 + (qualityOfLife - 40) * 0.03 + productionBias;
         state.world.growth = state.world.growth + (targetGrowth - state.world.growth) * 0.3 + (Math.random() - 0.5) * 0.4;
 
         // Trade partners in good standing add a little extra tax revenue on top of domestic growth; souring ones bleed it away
@@ -496,6 +530,17 @@ export const engine = {
         c.relation = Math.max(0, c.relation - 5);
         this.addNews(`${c.name}กดดันทางการค้า`, `ความสัมพันธ์กับ${c.name}ทรุดหนักจนกระทบการค้าระหว่างประเทศ`);
         ui.updateMain(); ui.renderForeignList();
+    },
+
+    investProvince(name) {
+        const prov = state.provinces.find(p => p.name === name);
+        const cost = 2e9;
+        if (state.world.nationalBudget < cost) { alert(`งบประเทศไม่พอ (ต้องการ ฿${(cost/1e9).toFixed(1)}B)`); return; }
+        state.world.nationalBudget -= cost;
+        if (!prov.modifiers) prov.modifiers = [];
+        prov.modifiers.push({ source: "ลงทุนพัฒนาอุตสาหกรรม", perDay: 30 / 60, remaining: 60 });
+        this.addNews(`ลงทุนพัฒนา${prov.name}`, `รัฐบาลอัดฉีดงบพัฒนาอุตสาหกรรม${Data.INDUSTRY_TYPES[prov.industry]?.label || ''}ในพื้นที่`);
+        ui.updateMain(); ui.showProvinceDetail(prov.name);
     },
 
     runElection() {

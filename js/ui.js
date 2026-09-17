@@ -308,7 +308,8 @@ export const ui = {
             const approval = faction ? faction.approval : 50;
             const color = approval > 60 ? '#10b981' : (approval < 40 ? '#ef4444' : '#f59e0b');
             const sizeClass = p.pop > 1200000 ? 'text-sm px-3 py-2' : (p.pop > 500000 ? 'text-xs px-2.5 py-1.5' : 'text-[10px] px-2 py-1');
-            return `<button onclick="ui.showProvinceDetail('${p.name}')" class="border-2 border-black font-bold ${sizeClass} bg-white hover:-translate-y-0.5 transition shadow-[2px_2px_0_#000] hover:shadow-[3px_3px_0_#000]" style="border-left: 6px solid ${color}">${p.name}</button>`;
+            const industry = Data.INDUSTRY_TYPES[p.industry];
+            return `<button onclick="ui.showProvinceDetail('${p.name}')" title="${industry?.label || ''}" class="border-2 border-black font-bold ${sizeClass} bg-white hover:-translate-y-0.5 transition shadow-[2px_2px_0_#000] hover:shadow-[3px_3px_0_#000] flex items-center gap-1.5" style="border-left: 6px solid ${color}"><i class="fas ${industry?.icon || 'fa-industry'} text-stone-400 text-[10px]"></i>${p.name}</button>`;
         };
 
         const regionBlock = (name) => `
@@ -343,6 +344,8 @@ export const ui = {
         const faction = state.factions.find(f => f.name === p.baseFaction);
         const approval = faction ? faction.approval : 50;
         const approvalColor = approval > 60 ? 'text-emerald-700' : (approval < 40 ? 'text-red-700' : 'text-amber-700');
+        const industry = Data.INDUSTRY_TYPES[p.industry];
+        const investLevel = p.investmentLevel ?? 50;
         const cont = document.getElementById('province-detail'); if (!cont) return;
         cont.innerHTML = `
             <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-1">ภาค${p.region}</div>
@@ -352,6 +355,12 @@ export const ui = {
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>ที่นั่ง สส. เขต</span><span class="font-mono font-bold">${p.seats}</span></div>
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>ฐานเสียงหลัก</span><span class="font-bold">${p.baseFaction}</span></div>
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>Approval ฐานเสียง</span><span class="font-mono font-bold ${approvalColor}">${approval.toFixed(0)}%</span></div>
+                <div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${industry?.icon || 'fa-industry'} mr-1"></i>อุตสาหกรรมหลัก</span><span class="font-bold">${industry?.label || p.industry}</span></div>
+            </div>
+            <div class="mt-4 pt-3 border-t-2 border-black">
+                <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-1"><span>ระดับการลงทุน</span><span>${investLevel.toFixed(0)}%</span></div>
+                <div class="w-full h-2 bg-stone-200 border border-black mb-3"><div class="h-full bg-emerald-600" style="width:${investLevel}%"></div></div>
+                <button onclick="engine.investProvince('${p.name}')" class="w-full py-2 text-[10px] font-bold border-2 border-black bg-white hover:bg-black hover:text-white transition uppercase">ลงทุนพัฒนาอุตสาหกรรม (฿2B งบชาติ)</button>
             </div>
             ${p.lastResult ? `
             <div class="mt-4 pt-3 border-t-2 border-black">
