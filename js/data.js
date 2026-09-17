@@ -22,6 +22,14 @@ export const FACTION_DATA = [
 ];
 export const FACTION_NAMES = FACTION_DATA.map(f => f.name);
 
+export const FOREIGN_POWERS = [
+    { id: "US", name: "สหรัฐอเมริกา", icon: "fa-flag-usa", ideology: "เสรีนิยม", tradeWeight: 25 },
+    { id: "CN", name: "จีน", icon: "fa-yin-yang", ideology: "อำนาจนิยม", tradeWeight: 30 },
+    { id: "EU", name: "สหภาพยุโรป", icon: "fa-star", ideology: "สิทธิมนุษยชน", tradeWeight: 20 },
+    { id: "JP", name: "ญี่ปุ่น", icon: "fa-torii-gate", ideology: "โลกาภิวัตน์", tradeWeight: 15 },
+    { id: "AS", name: "อาเซียน", icon: "fa-people-group", ideology: "ประชานิยม", tradeWeight: 10 }
+];
+
 // --- MAPPING ICON สำหรับ String (Ideology & Goal) ---
 export const TRAIT_ICONS = {
     // แนวคิด (Ideology)
@@ -145,5 +153,6 @@ export const POLICY_TEMPLATES = [
     { ministry: "เกษตรและสหกรณ์", name: "ธนาคารน้ำใต้ดินทั่วไทย", cost: 1.5e10, delibTime: 40, cooldown: 100, ideology: "เทคโนแครต", goal: "การอนุรักษ์ทรัพยากร", target: "เกษตรกร", impact: { "เกษตรกร": 15, "สิ่งแวดล้อม": 10 } },
     { ministry: "การคลัง", name: "ภาษีเงินได้อัตราก้าวหน้า", cost: 0, delibTime: 60, cooldown: 180, ideology: "สังคมนิยม", goal: "คุณภาพชีวิต", target: "หัวก้าวหน้า", impact: { "นายทุน": -30, "หัวก้าวหน้า": 20 } },
     { ministry: "กลาโหม", name: "จัดซื้อเครื่องบินขับไล่", cost: 2.5e10, delibTime: 40, cooldown: 150, ideology: "ชาตินิยม", goal: "การทหาร", target: "กองทัพ", impact: { "กองทัพ": 25, "เด็กรุ่นใหม่": -25 } },
-    { ministry: "คมนาคม", name: "รถไฟฟ้าความเร็วสูง", cost: 1.2e11, delibTime: 90, cooldown: 200, ideology: "โลกาภิวัตน์", goal: "เศรษฐกิจ", target: "ชนชั้นกลาง", impact: { "ชนชั้นกลาง": 20, "สิ่งแวดล้อม": -5 } }
+    { ministry: "คมนาคม", name: "รถไฟฟ้าความเร็วสูง", cost: 1.2e11, delibTime: 90, cooldown: 200, ideology: "โลกาภิวัตน์", goal: "เศรษฐกิจ", target: "ชนชั้นกลาง", impact: { "ชนชั้นกลาง": 20, "สิ่งแวดล้อม": -5 } },
+    { ministry: "การต่างประเทศ", name: "เข้าร่วมกรอบการค้าเสรีระดับภูมิภาค", cost: 5e9, delibTime: 45, cooldown: 120, ideology: "โลกาภิวัตน์", goal: "การต่างประเทศ", target: "ทุนข้ามชาติ", impact: { "ทุนข้ามชาติ": 15, "ท้องถิ่น": -8 } }
 ];
