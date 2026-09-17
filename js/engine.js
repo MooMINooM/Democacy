@@ -474,17 +474,34 @@ export const engine = {
     runElection() {
         gameClock.setSpeed(0); ui.resetModalState();
 
-        // Largest-remainder method: floor each party's proportional share, then hand out
-        // the leftover seats to whoever's fractional remainder was biggest.
-        const totalPop = state.parties.reduce((s, p) => s + p.popularity, 0);
-        const quota = Data.TOTAL_SEATS / totalPop;
-        const results = state.parties.map(p => {
-            const exact = p.popularity * quota;
-            const seats = Math.floor(exact);
-            return { party: p, seats, remainder: exact - seats, prevSeats: p.seats, prevStatus: p.status };
+        // Count constituency by constituency, province by province, instead of allocating
+        // seats from national popularity alone: each province's baseFaction rewards whichever
+        // party's platform matches its affinity ideology, so results vary by province and the
+        // map becomes readable evidence, not just a national number.
+        const seatsWon = {};
+        state.parties.forEach(p => { seatsWon[p.id] = 0; });
+        const prevSeats = {};
+        state.parties.forEach(p => { prevSeats[p.id] = p.seats; });
+
+        state.provinces.forEach(prov => {
+            const affinity = Data.FACTION_IDEOLOGY_AFFINITY[prov.baseFaction];
+            const weights = state.parties.map(p => {
+                const bonus = affinity && p.ideologies.includes(affinity) ? 25 : 0;
+                return { party: p, weight: Math.max(1, p.popularity + bonus + (Math.random() * 10 - 5)) };
+            });
+            const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
+            const provinceResult = {};
+            for (let i = 0; i < prov.seats; i++) {
+                let r = Math.random() * totalWeight;
+                let winner = weights[weights.length - 1];
+                for (const w of weights) { r -= w.weight; if (r <= 0) { winner = w; break; } }
+                seatsWon[winner.party.id]++;
+                provinceResult[winner.party.id] = (provinceResult[winner.party.id] || 0) + 1;
+            }
+            prov.lastResult = provinceResult;
         });
-        let remaining = Data.TOTAL_SEATS - results.reduce((s, r) => s + r.seats, 0);
-        [...results].sort((a, b) => b.remainder - a.remainder).slice(0, remaining).forEach(r => r.seats++);
+
+        const results = state.parties.map(p => ({ party: p, seats: seatsWon[p.id], prevSeats: prevSeats[p.id], prevStatus: p.status }));
         results.forEach(r => { r.party.seats = r.seats; });
 
         this.assignGovernmentStatus(state.parties);
@@ -515,7 +532,7 @@ export const engine = {
             ? `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:opacity-90">เริ่มสมัยประชุมใหม่</button>`
             : `<button onclick="location.reload()" class="w-full p-4 bg-red-700 text-white font-bold border-2 border-black text-lg hover:opacity-90">จบเกม</button>`;
         document.getElementById('event-modal').classList.remove('hidden');
-        ui.renderCabinet(); ui.renderMinistryList(); ui.renderParliament();
+        ui.renderCabinet(); ui.renderMinistryList(); ui.renderParliament(); ui.renderProvinceMap();
         this.addNews("ผลการเลือกตั้งทั่วไปประกาศแล้ว", won ? "พรรคท่านยังคงจัดตั้งรัฐบาลได้ต่อไป" : "พรรคท่านไม่สามารถจัดตั้งรัฐบาลได้ในสมัยนี้");
     },
 

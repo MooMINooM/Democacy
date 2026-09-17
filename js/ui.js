@@ -337,6 +337,17 @@ export const ui = {
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>ฐานเสียงหลัก</span><span class="font-bold">${p.baseFaction}</span></div>
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span>Approval ฐานเสียง</span><span class="font-mono font-bold ${approvalColor}">${approval.toFixed(0)}%</span></div>
             </div>
+            ${p.lastResult ? `
+            <div class="mt-4 pt-3 border-t-2 border-black">
+                <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2">ผลเลือกตั้งล่าสุดในจังหวัดนี้</div>
+                <div class="space-y-1">
+                    ${Object.entries(p.lastResult).sort((a,b)=>b[1]-a[1]).map(([partyId, won]) => {
+                        const party = state.parties.find(x => x.id === partyId);
+                        if (!party) return '';
+                        return `<div class="flex justify-between items-center text-[11px]"><span class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full border border-black" style="background:${party.color}"></span>${party.name}</span><span class="font-mono font-bold">${won}/${p.seats}</span></div>`;
+                    }).join('')}
+                </div>
+            </div>` : ''}
         `;
     },
 
