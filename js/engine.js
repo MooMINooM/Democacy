@@ -9,6 +9,9 @@ function ideologiesConflict(a, b) {
     return fromA.includes(b) || fromB.includes(a);
 }
 
+// A faction's rough weight in the national economy: how many people, how well-off they are.
+function factionOutput(f) { return f.basePop * f.wealth; }
+
 export const gameClock = {
     toggle() { this.setSpeed(state.speed === 0 ? 1 : 0); },
     setSpeed(s) { 
@@ -37,7 +40,9 @@ export const gameClock = {
         state.factions.forEach(f => {
             (f.modifiers || []).forEach(m => { f.approval = Math.max(0, Math.min(100, f.approval + m.perDay * state.speed)); m.remaining -= state.speed; });
             f.modifiers = (f.modifiers || []).filter(m => m.remaining > 0);
-            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5));
+            // Wealthier/more capital-exposed factions feel national growth (or a recession) more directly, day to day
+            const growthBias = (state.world.growth / 10) * (f.wealth / 100) * 0.3;
+            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + growthBias * state.speed));
         });
         if (state.date.getDate() === 1) engine.processMonthlyUpdate();
         ui.updateMain();
@@ -157,7 +162,17 @@ export const engine = {
     },
     
     processMonthlyUpdate() {
-        state.world.growth += (Math.random() - 0.5) * 0.1;
+        // Growth tracks how the economically-weighted population feels, not a plain random walk:
+        // a faction with a bigger production base (basePop * wealth) swings growth more when its approval moves.
+        const totalOutput = state.factions.reduce((s, f) => s + factionOutput(f), 0);
+        const weightedApproval = state.factions.reduce((s, f) => s + (f.approval - 50) * factionOutput(f), 0) / totalOutput;
+        const targetGrowth = weightedApproval * 0.16;
+        state.world.growth = state.world.growth + (targetGrowth - state.world.growth) * 0.3 + (Math.random() - 0.5) * 0.4;
+
+        const taxRevenue = state.world.nationalBudget * Math.max(0.0004, 0.0012 + state.world.growth * 0.0004);
+        state.world.nationalBudget += taxRevenue;
+        this.addNews("รายได้ภาษีประจำเดือน", `รัฐเก็บภาษีได้ ฿${(taxRevenue/1e9).toFixed(1)}B จากภาวะเศรษฐกิจที่เติบโต ${state.world.growth.toFixed(1)}%`);
+
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
         if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
         const govSeats = state.parties.filter(p => p.status === "Government").reduce((s, p) => s + p.seats, 0);

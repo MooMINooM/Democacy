@@ -37,7 +37,8 @@ export const ui = {
             'hud-approval-text': `${state.world.approval.toFixed(0)}%`,
             'hud-transparency-text': `${(state.world.transparency ?? 100).toFixed(0)}%`,
             'hud-personal-top': `฿${(state.player.personalFunds / 1e6).toFixed(0)}M`,
-            'stat-cabinet-stability-display': `${state.world.cabinetStability}%`
+            'stat-cabinet-stability-display': `${state.world.cabinetStability}%`,
+            'stat-growth-sidebar': `${state.world.growth >= 0 ? '+' : ''}${state.world.growth.toFixed(1)}%`
         };
         for (const [id, val] of Object.entries(els)) { const el = document.getElementById(id); if(el) el.innerText = val; }
         const bar = document.getElementById('hud-approval-bar'); if (bar) bar.style.width = `${state.world.approval}%`;
@@ -277,9 +278,12 @@ export const ui = {
     },
 
     // --- 5. FACTIONS (ปรับใหม่: Report Cards) ---
-    renderFactionList() { 
-        const cont = document.getElementById('faction-list'); if(!cont) return; 
-        cont.innerHTML = state.factions.map(f => `
+    renderFactionList() {
+        const cont = document.getElementById('faction-list'); if(!cont) return;
+        const totalOutput = state.factions.reduce((s, f) => s + f.basePop * f.wealth, 0);
+        cont.innerHTML = state.factions.map(f => {
+            const econShare = (f.basePop * f.wealth) / totalOutput * 100;
+            return `
             <div class="bg-white p-4 border-2 border-black shadow-[4px_4px_0_rgba(0,0,0,0.1)] hover:-translate-y-1 transition duration-200">
                 <div class="flex justify-between items-start mb-2">
                     <div class="text-2xl text-stone-400"><i class="fas ${f.icon}"></i></div>
@@ -290,6 +294,10 @@ export const ui = {
                 </div>
                 <div class="font-bold text-sm uppercase tracking-wide border-t-2 border-black pt-2 mt-2">${f.name}</div>
                 <div class="w-full bg-stone-200 h-1 mt-2"><div class="h-full bg-black" style="width: ${f.approval}%"></div></div>
+                <div class="flex justify-between text-[9px] text-stone-500 mt-2" title="สัดส่วนต่อผลผลิตทางเศรษฐกิจของประเทศ (ประชากร x ความมั่งคั่ง)">
+                    <span>น้ำหนักเศรษฐกิจ</span>
+                    <span class="font-mono font-bold">${econShare.toFixed(1)}%</span>
+                </div>
                 ${(f.modifiers && f.modifiers.length > 0) ? `
                 <div class="mt-3 pt-2 border-t border-stone-200 space-y-1">
                     ${f.modifiers.slice(0, 3).map(m => `
@@ -300,7 +308,8 @@ export const ui = {
                     `).join('')}
                 </div>` : ''}
             </div>
-        `).join("");
+        `;
+        }).join("");
     },
 
     // --- 6. MP LIST (!!! DO NOT CHANGE LOGIC, ONLY NEATNESS !!!) ---
