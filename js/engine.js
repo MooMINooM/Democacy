@@ -411,11 +411,19 @@ function getImplementationEffectiveness(p) {
 // player's own policy gets, regardless of who proposed it -- the "same state capacity, real
 // consequences" half of AI Government Behavior v2 was already true structurally; this is the
 // selection half.
-function scoreAIPolicy(template) {
+function scoreAIPolicy(template, drivingParty) {
     let score = 0;
     // Ideology: does this fit what the governing coalition actually stands for?
     const govParties = state.parties.filter(p => p.status === "Government");
     if (govParties.some(p => p.ideologies.includes(template.ideology))) score += 20;
+    // Party Personality (Stage C4): on top of the coalition-wide terms below, the specific party
+    // actually driving this proposal weighs it by its own lasting priority lean -- a party whose
+    // bias runs toward สวัสดิการ pushes welfare bills more often than one leaning ความมั่นคง would,
+    // even inside the same coalition. drivingParty.priority drifts slowly (see
+    // updatePartyPriorities()) so this bias adapts rather than staying a fixed pattern forever.
+    if (drivingParty && template.category && drivingParty.priority) {
+        score += (drivingParty.priority[template.category] || 0) * 0.4;
+    }
     // Faction pressure: a template that helps (positive impact on) a currently unhappy target
     // faction is more urgent than one that helps a faction already doing fine.
     const targetFaction = state.factions.find(f => f.name === template.target);
@@ -442,6 +450,52 @@ function scoreAIPolicy(template) {
     const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
     if (daysToElection < 180) score += Math.max(0, 60 - template.delibTime) * 0.3;
     return score;
+}
+
+// AI Party Personality (Stage C4): each party's lasting lean across the 4 PRIORITY_CATEGORIES,
+// one clearly dominant so parties actually read as different from each other instead of all
+// scoring templates the same way. Reused both at party creation and after an election punishes
+// a party badly enough to pick a new leader (applyElectionPunishment()).
+function generatePartyPriority() {
+    const dominant = Data.PRIORITY_CATEGORIES[Math.floor(Math.random() * Data.PRIORITY_CATEGORIES.length)];
+    const priority = {};
+    Data.PRIORITY_CATEGORIES.forEach(c => { priority[c] = c === dominant ? 40 + Math.random() * 30 : Math.random() * 25; });
+    return priority;
+}
+
+// A party's priority is a bias, not a fixed pattern (roadmap's own wording) -- it should drift
+// toward what the world and the party's own base actually need, not just sit at its starting
+// roll forever. Called monthly (in processMonthlyUpdate()) so the drift stays slow and readable
+// as a lasting lean rather than something that swings with every tick like a pressure stat.
+//
+// Anchored to party.basePriority (the fixed roll from generatePartyPriority(), unchanged except
+// on a leadership change), NOT to party.priority's own current value -- an early version targeted
+// current-value-plus-badness, which meant the target itself rose every time priority rose, so any
+// persistent badness ratcheted priority toward 100 forever with nothing to pull it back down once
+// conditions improved (confirmed in testing: after ~16 elections/64 years, 3 of 4 categories had
+// pinned at 99.99 on multiple parties, erasing the "one clearly dominant lean" the whole feature
+// is meant to show). Anchoring to a fixed base means the target -- and priority behind it --
+// actually falls back when the badness that pushed it up goes away, a real adapt-and-recede bias
+// instead of a one-way ratchet.
+function getPartyPriorityTarget(party) {
+    const unemploymentBadness = Math.max(0, state.world.unemployment - Data.WORLD_STAT_META.unemployment.baseline);
+    const crimeBadness = Math.max(0, state.world.crime - Data.WORLD_STAT_META.crime.baseline);
+    const envBadness = Math.max(0, Data.WORLD_STAT_META.environment.baseline - state.world.environment);
+    const securityBadness = Math.max(0, state.world.protestPressure - 30) + Math.max(0, Data.WORLD_STAT_META.military.baseline - state.world.military);
+
+    // Base pressure: a party whose own base is unhappy pivots toward bread-and-butter relief
+    // regardless of its original ideology, the same way a real party chases its slipping base.
+    const baseFaction = state.factions.find(f => f.name === party.baseFaction);
+    const baseUnhappy = baseFaction ? Math.max(0, 45 - baseFaction.approval) : 0;
+
+    const base = party.basePriority || party.priority;
+    const target = { ...base };
+    target["เศรษฐกิจ"] = (base["เศรษฐกิจ"] || 0) + unemploymentBadness * 0.3 + baseUnhappy * 0.15;
+    target["สวัสดิการ"] = (base["สวัสดิการ"] || 0) + (unemploymentBadness + crimeBadness) * 0.2 + baseUnhappy * 0.15;
+    target["สิ่งแวดล้อม"] = (base["สิ่งแวดล้อม"] || 0) + envBadness * 0.3;
+    target["ความมั่นคง"] = (base["ความมั่นคง"] || 0) + securityBadness * 0.25;
+    Data.PRIORITY_CATEGORIES.forEach(c => { target[c] = Math.max(0, Math.min(100, target[c])); });
+    return target;
 }
 
 // Economy v2 (Phase 5): what share of the country's actual current output rides on trade versus
@@ -878,12 +932,14 @@ export const engine = {
         
         for(let i=0; i<20; i++) {
             let size = i < 6 ? "Major" : (i < 12 ? "Medium" : "Small");
+            const priority = generatePartyPriority();
             pArr.push({
                 id: "P" + (i + 1), name: "พรรค" + names[i], size, color: colors[i],
                 ideologies: shuffle(Data.IDEOLOGY_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 goals: shuffle(Data.GOAL_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 baseFaction: Data.FACTION_NAMES[Math.floor(Math.random() * Data.FACTION_NAMES.length)],
-                status: "Opposition", seats: 0, trust: 70, popularity: 0
+                status: "Opposition", seats: 0, trust: 70, popularity: 0,
+                priority: { ...priority }, basePriority: priority
             });
         }
         let rSeats = Data.TOTAL_SEATS;
@@ -1061,6 +1117,17 @@ export const engine = {
         state.leaders.forEach(l => { l.trust = l.trust + (50 - l.trust) * 0.1; });
         state.parties.forEach(p => { p.trust = (p.trust ?? 70) + (70 - (p.trust ?? 70)) * 0.1; });
 
+        // AI Party Personality (Stage C4): each party's priority lean drifts toward what the
+        // world and its own base currently reward, slowly (10%/month, same cadence as trust
+        // above) so it reads as a lasting bias shifting over a term, not a stat that swings with
+        // every crisis.
+        state.parties.forEach(p => {
+            if (!p.priority) { const fresh = generatePartyPriority(); p.priority = { ...fresh }; p.basePriority = fresh; }
+            if (!p.basePriority) p.basePriority = { ...p.priority };
+            const target = getPartyPriorityTarget(p);
+            Data.PRIORITY_CATEGORIES.forEach(c => { p.priority[c] = p.priority[c] + (target[c] - p.priority[c]) * 0.1; });
+        });
+
         // Trend arrows (Phase 2): a short rolling history per stat, so the UI can say "up from
         // last month" not just show a bare number. Pushed last, after every stat this month has
         // actually finished recomputing -- approval and cabinetStability used to get pushed
@@ -1237,10 +1304,23 @@ export const engine = {
     aiPropose() {
         const candidates = Data.POLICY_TEMPLATES.filter(t => !state.activePolicies.some(x => x.name === t.name));
         if (candidates.length === 0) return;
-        const scored = candidates.map(t => ({ t, score: scoreAIPolicy(t) })).sort((a, b) => b.score - a.score);
+
+        // Party Personality (Stage C4): which government party actually drives this month's
+        // proposal is picked weighted by seats (a bigger coalition partner gets more turns at
+        // the wheel), then its own priority lean shapes what it pushes -- see scoreAIPolicy().
+        const govParties = state.parties.filter(p => p.status === "Government");
+        let drivingParty = null;
+        if (govParties.length > 0) {
+            const totalGovSeats = govParties.reduce((s, p) => s + p.seats, 0);
+            let r = Math.random() * totalGovSeats;
+            drivingParty = govParties[govParties.length - 1];
+            for (const p of govParties) { r -= p.seats; if (r <= 0) { drivingParty = p; break; } }
+        }
+
+        const scored = candidates.map(t => ({ t, score: scoreAIPolicy(t, drivingParty) })).sort((a, b) => b.score - a.score);
         const picked = scored[Math.floor(Math.random() * Math.min(3, scored.length))].t;
-        const govMPs = state.leaders.filter(l => l.party.status === "Government");
-        const aiMP = govMPs.length > 0 ? govMPs[Math.floor(Math.random()*govMPs.length)] : state.leaders[Math.floor(Math.random()*state.leaders.length)];
+        const partyMPs = drivingParty ? state.leaders.filter(l => l.party.id === drivingParty.id) : [];
+        const aiMP = partyMPs.length > 0 ? partyMPs[Math.floor(Math.random()*partyMPs.length)] : state.leaders[Math.floor(Math.random()*state.leaders.length)];
         if (aiMP.party.status === "Government" && picked.cost > state.world.nationalBudget * 0.1) return;
         this.propose(picked, `${aiMP.name}`);
     },
@@ -1461,6 +1541,10 @@ export const engine = {
         state.provinces.forEach(p => { p.playerCampaignBoost = 0; });
 
         this.assignGovernmentStatus(state.parties);
+        // AI Party Personality (Stage C4): a party punished hard enough by this election -- lost
+        // government or lost over a quarter of its prior seats -- gets a chance to actually
+        // change instead of running back the same losing pitch next term.
+        this.applyElectionPunishment(results);
         Object.values(Data.MINISTRIES).forEach(m => { m.currentMinister = null; }); // new term, new cabinet to appoint
         state.activePolicies = [];
         state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
@@ -1520,6 +1604,42 @@ export const engine = {
         document.getElementById('event-modal').classList.remove('hidden');
         ui.renderCabinet(); ui.renderMinistryList(); ui.renderParliament(); ui.renderProvinceMap();
         this.addNews("ผลการเลือกตั้งทั่วไปประกาศแล้ว", won ? "พรรคท่านยังคงจัดตั้งรัฐบาลได้ต่อไป" : "พรรคท่านไม่สามารถจัดตั้งรัฐบาลได้ในสมัยนี้ และจะทำหน้าที่ฝ่ายค้านในสภาชุดใหม่");
+    },
+
+    // AI Party Personality (Stage C4): the roadmap's third ask -- "a party punished by the
+    // election should have a chance to change stance or leadership long-term". Only reacts to a
+    // real beating (lost government, or lost over a quarter of its prior seats), and even then
+    // doesn't always react (parties have inertia too), and skips the player's own party -- that
+    // stance is the player's call, not something scripted out from under them.
+    applyElectionPunishment(results) {
+        results.forEach(r => {
+            const party = r.party;
+            if (party.id === state.player.party.id) return;
+            const seatLossRatio = r.prevSeats > 0 ? (r.prevSeats - r.seats) / r.prevSeats : 0;
+            const lostPower = r.prevStatus === "Government" && party.status !== "Government";
+            if (seatLossRatio <= 0.25 && !lostPower) return;
+            if (Math.random() < 0.5) return;
+
+            if (Math.random() < 0.5) {
+                // Stance change: swap one held ideology for one the party doesn't currently hold.
+                const pool = Data.IDEOLOGY_POOL.filter(i => !party.ideologies.includes(i));
+                if (pool.length === 0) return;
+                const outIdx = Math.floor(Math.random() * party.ideologies.length);
+                const dropped = party.ideologies[outIdx];
+                const added = pool[Math.floor(Math.random() * pool.length)];
+                party.ideologies[outIdx] = added;
+                this.addNews(`${party.name} ปรับจุดยืนใหม่`, `หลังพ่ายศึกเลือกตั้งอย่างหนัก พรรคเปลี่ยนแนวทางจาก${dropped}สู่${added}`);
+            } else {
+                // Leadership change: a fresh leader resets standing with coalition partners and
+                // brings their own priority lean, same shared roll party creation uses.
+                party.trust = Math.min(100, Math.max(party.trust ?? 70, 60) + 15);
+                party.dependence = 0;
+                const newPriority = generatePartyPriority();
+                party.priority = { ...newPriority }; party.basePriority = newPriority;
+                party.popularity = Math.min(100, (party.popularity || 0) + 3);
+                this.addNews(`${party.name} เปลี่ยนหัวหน้าพรรค`, `หลังพ่ายศึกเลือกตั้งอย่างหนัก พรรคเปลี่ยนผู้นำใหม่พร้อมทิศทางใหม่`);
+            }
+        });
     },
 
     triggerNoConfidence() {
