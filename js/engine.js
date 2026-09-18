@@ -389,9 +389,15 @@ function getImplementationEffectiveness(p) {
     const minister = ministry?.currentMinister;
     let fitMultiplier, fitLabel;
     if (!minister) { fitMultiplier = 0.5; fitLabel = "ไม่มีรัฐมนตรีดูแลกระทรวงนี้"; }
-    else if (minister.trait.goal === p.goal) { fitMultiplier = 1.15; fitLabel = `${minister.name}สนใจประเด็นนี้เป็นพิเศษ`; }
-    else if (ideologiesConflict(minister.trait.ideology, p.ideology)) { fitMultiplier = 0.7; fitLabel = `${minister.name}ไม่เห็นด้วยกับแนวทางนี้`; }
-    else { fitMultiplier = 1.0; fitLabel = `${minister.name}ดูแลตามปกติ`; }
+    else {
+        if (minister.trait.goal === p.goal) { fitMultiplier = 1.15; fitLabel = `${minister.name}สนใจประเด็นนี้เป็นพิเศษ`; }
+        else if (ideologiesConflict(minister.trait.ideology, p.ideology)) { fitMultiplier = 0.7; fitLabel = `${minister.name}ไม่เห็นด้วยกับแนวทางนี้`; }
+        else { fitMultiplier = 1.0; fitLabel = `${minister.name}ดูแลตามปกติ`; }
+        // Opposition Gameplay v2 (Stage C5): a minister who shadowed this exact ministry while in
+        // opposition (assignShadowMinister()) already studied the brief -- a small but real edge,
+        // and the payoff that makes building a shadow cabinet worth doing before you're back in power.
+        if (minister.shadowedMinistries?.[p.ministry]) { fitMultiplier += 0.1; fitLabel += ` (เคยเป็นรัฐมนตรีเงากระทรวงนี้)`; }
+    }
 
     // Budget Coverage reads the same fiscalCondition tag Phase 1/2 already computes -- a policy
     // costing a few billion barely dents a multi-trillion treasury on paper, but a government
@@ -939,7 +945,7 @@ export const engine = {
                 goals: shuffle(Data.GOAL_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 baseFaction: Data.FACTION_NAMES[Math.floor(Math.random() * Data.FACTION_NAMES.length)],
                 status: "Opposition", seats: 0, trust: 70, popularity: 0,
-                priority: { ...priority }, basePriority: priority
+                priority: { ...priority }, basePriority: priority, electoralPactWith: null
             });
         }
         let rSeats = Data.TOTAL_SEATS;
@@ -979,6 +985,20 @@ export const engine = {
         for (const p of sorted) {
             if (p.status !== "Government") p.status = (p.seats > 40 || Math.random() > 0.5) ? "Opposition" : "Neutral";
         }
+
+        // Opposition Gameplay v2 (Stage C5): a pre-election alliance (negotiateAlliance()) is a
+        // commitment, not just a hope -- if either side of a pact ends up in government by the
+        // above heuristic, the other rides in with them regardless of the usual ideology-conflict
+        // filter. Doesn't rework the coalition-formation algorithm itself (too invasive for what's
+        // meant to be an insurance policy on an existing government seat, not a guarantee of one),
+        // so a pact only pays off when at least one side already made it in on its own. Consumed
+        // once here -- a fresh negotiation is needed before the next election.
+        pArr.forEach(p => {
+            if (!p.electoralPactWith) return;
+            const partner = pArr.find(x => x.id === p.electoralPactWith);
+            if (partner && p.status === "Government" && partner.status !== "Government") partner.status = "Government";
+        });
+        pArr.forEach(p => { p.electoralPactWith = null; });
     },
 
     addNews(h, b = "") { state.news.unshift({ date: state.date.toLocaleDateString('th-TH'), headline: h, body: b || "วิเคราะห์สถานการณ์วันนี้..." }); ui.renderNews(); },
@@ -1496,6 +1516,80 @@ export const engine = {
         ui.updateMain(); ui.showProvinceDetail(prov.name);
     },
 
+    // Opposition Gameplay v2 (Stage C5): the roadmap is explicit that opposition needs its own
+    // goal -- "build a path back to power" -- not a scaled-down copy of government actions.
+    // campaignProvince() above already covers building a provincial base; these three cover the
+    // rest of the roadmap's list (Shadow Cabinet, policy stance, pre-election alliance), each
+    // wired into a real system instead of just posting a news item: a shadow minister's fit
+    // bonus shows up in getImplementationEffectiveness() once they're a real minister, an
+    // opposition stance moves the actual vote math in runVote() via oppositionLobby/
+    // coalitionBoost, and an alliance changes who assignGovernmentStatus() actually seats.
+    assignShadowMinister(ministryName, mpId) {
+        if (state.player.party.status !== "Opposition") { alert("เฉพาะฝ่ายค้านเท่านั้นที่ตั้งคณะรัฐมนตรีเงาได้"); return; }
+        if (!Data.MINISTRIES[ministryName]) return;
+        const mp = state.leaders.find(l => l.id === mpId);
+        if (!mp || mp.party.id !== state.player.party.id) { alert("เลือกได้เฉพาะ สส. พรรคท่านเอง"); return; }
+        state.player.shadowCabinet[ministryName] = mpId;
+        mp.shadowedMinistries = mp.shadowedMinistries || {};
+        mp.shadowedMinistries[ministryName] = true;
+        // A smaller echo of the prestige/trust boost a real appointment gives (appointMinister()).
+        mp.prestige = Math.min(100, (mp.prestige ?? 50) + 5);
+        mp.trust = Math.min(100, mp.trust + 3);
+        this.addNews(`แต่งตั้งรัฐมนตรีเงา: ${mp.name}`, `${mp.name}รับหน้าที่รัฐมนตรีเงากระทรวง${ministryName} ทำหน้าที่ตรวจสอบและวิจารณ์การทำงานของรัฐบาลด้านนี้`);
+        ui.updateMain();
+    },
+
+    stanceOnPolicy(pName, stance) {
+        if (state.player.party.status !== "Opposition") { alert("เฉพาะฝ่ายค้านเท่านั้นที่แสดงจุดยืนต่อร่างกฎหมายรัฐบาลได้"); return; }
+        const p = state.activePolicies.find(x => x.name === pName);
+        if (!p) return;
+        const proposerMP = state.leaders.find(l => l.name === p.proposer);
+        if (p.proposer === "รัฐบาล" ? state.player.party.status === "Government" : proposerMP?.party.id === state.player.party.id) {
+            alert("นี่คือร่างกฎหมายของพรรคท่านเอง"); return;
+        }
+        const cost = 3000000;
+        if (state.player.personalFunds < cost) { alert(`เงินส่วนตัวไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        state.player.personalFunds -= cost;
+        // Same saturation pattern as lobbyIndividual()/campaignProvince(): repeating the same
+        // press line on the same bill gets less effective each time.
+        const satMultiplier = 1 - (p.oppStanceSaturation || 0) / 100;
+        const amount = 10 * satMultiplier;
+        if (stance === "oppose") {
+            p.oppositionLobby = (p.oppositionLobby || 0) + amount;
+            this.addNews(`ฝ่ายค้านคัดค้าน: ${p.name}`, `${state.player.party.name}ออกแถลงการณ์คัดค้านร่างนี้ต่อสาธารณะ`);
+        } else {
+            p.coalitionBoost = (p.coalitionBoost || 0) + amount;
+            this.addNews(`ฝ่ายค้านสนับสนุน: ${p.name}`, `${state.player.party.name}ประกาศสนับสนุนร่างนี้อย่างเปิดเผย แม้เป็นร่างของรัฐบาล`);
+        }
+        p.oppStanceSaturation = Math.min(100, (p.oppStanceSaturation || 0) + 35);
+        ui.updateMain();
+    },
+
+    negotiateAlliance(partyId) {
+        if (state.player.party.status !== "Opposition") { alert("เฉพาะฝ่ายค้านเท่านั้นที่เจรจาพันธมิตรก่อนเลือกตั้งได้"); return; }
+        const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+        if (daysToElection > 365) { alert("เจรจาพันธมิตรได้เฉพาะช่วงใกล้เลือกตั้ง (ภายใน 1 ปี)"); return; }
+        const partner = state.parties.find(p => p.id === partyId);
+        if (!partner || partner.id === state.player.party.id || partner.status === "Government") return;
+        const cost = 15000000;
+        if (state.player.personalFunds < cost) { alert(`เงินส่วนตัวไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        state.player.personalFunds -= cost;
+
+        // Same conflict check assignGovernmentStatus() itself uses -- a party won't commit to a
+        // pact with someone whose ideology it's actively opposed to, and low trust (the same
+        // field processQuidProQuo() spends/builds) makes even a compatible party wary.
+        const conflict = state.player.party.ideologies.some(i => partner.ideologies.some(gi => ideologiesConflict(i, gi)));
+        const successChance = conflict ? 20 : 60 + ((partner.trust ?? 70) - 70) * 0.5;
+        if (Math.random() * 100 > successChance) {
+            this.addNews(`เจรจาพันธมิตรล้มเหลว`, `${partner.name}ปฏิเสธข้อเสนอเป็นพันธมิตรก่อนการเลือกตั้งกับ${state.player.party.name}`);
+            ui.updateMain(); return;
+        }
+        state.player.party.electoralPactWith = partner.id;
+        partner.electoralPactWith = state.player.party.id;
+        this.addNews(`จับมือพันธมิตรก่อนเลือกตั้ง`, `${state.player.party.name}และ${partner.name}ตกลงร่วมมือกันหากได้เสียงข้างมากในการเลือกตั้งครั้งหน้า`);
+        ui.updateMain();
+    },
+
     runElection() {
         gameClock.setSpeed(0); ui.resetModalState();
 
@@ -1758,6 +1852,10 @@ export const engine = {
                 score += ((mp.party.trust ?? 70) - 70) * 0.6;
             }
             score += (p.coalitionBoost || 0);
+            // Opposition Gameplay v2 (Stage C5): stanceOnPolicy('oppose') builds this up the same
+            // way processQuidProQuo() builds coalitionBoost -- a public opposition campaign
+            // against a bill is real pressure on the floor, not just flavor text.
+            score -= (p.oppositionLobby || 0);
             if (state.voteModifier && mp.party.id === state.voteModifier.partyId) {
                 if (state.voteModifier.type === 'support') score += 100; if (state.voteModifier.type === 'rebel') score -= 100;
             }
