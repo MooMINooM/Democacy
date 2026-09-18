@@ -128,6 +128,7 @@ export const ui = {
         this.renderContextPanel();
         this.renderEconomyPanel();
         this.renderSocietyPanel();
+        this.renderBattlegroundPanel();
     },
 
     // Dynamic Context Engine (Phase 1): shows the derived situational labels and the two new
@@ -207,6 +208,29 @@ export const ui = {
                     ${ctx.shrinkingClass ? ` &middot; กลุ่ม "${ctx.shrinkingClass}" กำลังหดตัว` : ''}
                 </div>
             </button>`;
+    },
+
+    // Election Readability (Stage B4): the provinces actually worth watching before the next
+    // vote, reusing getBattlegroundProvinces() (built on Stage B3's political layer) -- clicking
+    // a row jumps straight to that province on the map instead of making the player hunt for it.
+    renderBattlegroundPanel() {
+        const cont = document.getElementById('battleground-panel'); if (!cont) return;
+        const battlegrounds = engine.getBattlegroundProvinces(6);
+        if (battlegrounds.length === 0) {
+            cont.innerHTML = `<div class="text-[10px] text-stone-400 italic text-center py-2">ยังไม่มีจังหวัดที่สูสีในตอนนี้</div>`;
+            return;
+        }
+        const COMPETITIVE_LABELS = { Battleground: ["สมรภูมิ", "text-red-700"], Leaning: ["เอียงข้างชัดเจน", "text-amber-700"] };
+        cont.innerHTML = battlegrounds.map(b => `
+            <button onclick="ui.tab('map'); ui.showProvinceDetail('${b.name}');" class="w-full text-left border-2 border-black p-2.5 hover:bg-stone-50 transition">
+                <div class="flex justify-between items-center text-[10px] mb-1">
+                    <span class="font-bold">${b.name} <span class="text-stone-500 font-normal">(${b.seats} ที่นั่ง · ${b.region})</span></span>
+                    <span class="font-bold ${COMPETITIVE_LABELS[b.competitiveness][1]}">${COMPETITIVE_LABELS[b.competitiveness][0]}</span>
+                </div>
+                <div class="w-full h-1.5 bg-red-200 border border-black flex overflow-hidden"><div class="h-full bg-blue-500" style="width:${b.govSupport}%"></div></div>
+                <div class="flex justify-between text-[9px] text-stone-500 mt-0.5"><span>รัฐบาล ${b.govSupport.toFixed(0)}%</span><span>ฝ่ายค้าน ${b.oppSupport.toFixed(0)}%</span></div>
+            </button>
+        `).join('');
     },
 
     renderNationalStats() {

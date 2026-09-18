@@ -199,6 +199,17 @@ function getProvincePoliticalLayer(prov) {
 
     return { govSupport, oppSupport, competitiveness, leaning, localIssue, populationTrend, shares };
 }
+// Election Readability (Stage B4): the provinces actually worth the player's attention before an
+// election, ranked by how thin the margin is -- reuses getProvincePoliticalLayer() (Stage B3),
+// not a new formula.
+function getBattlegroundProvinces(limit = 8) {
+    return state.provinces
+        .map(p => ({ province: p, layer: getProvincePoliticalLayer(p) }))
+        .filter(x => x.layer.competitiveness !== "Safe")
+        .sort((a, b) => Math.abs(a.layer.govSupport - a.layer.oppSupport) - Math.abs(b.layer.govSupport - b.layer.oppSupport))
+        .slice(0, limit)
+        .map(x => ({ name: x.province.name, region: x.province.region, seats: x.province.seats, ...x.layer }));
+}
 // Seat Security (Stage B2): now that every MP carries a real province (Stage B1), this reads
 // that constituency directly -- its own base faction's approval, and whether it's actually
 // under- or well-invested -- instead of leaning on mp.status (the MP's personal faction
@@ -570,7 +581,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces,
 
     init() {
         state.voteModifier = null;
@@ -1267,9 +1278,39 @@ export const engine = {
 
         const prevSeats = {};
         state.parties.forEach(p => { prevSeats[p.id] = p.seats; });
+        // Post-election analysis (Stage B4): which party actually led each province BEFORE this
+        // vote, captured from last term's lastResult before runProvinceElection() overwrites it,
+        // so flips can be attributed to something concrete instead of just showing a seat count.
+        const prevLeaders = {};
+        state.provinces.forEach(p => {
+            const entries = Object.entries(p.lastResult || {}).sort((a, b) => b[1] - a[1]);
+            prevLeaders[p.name] = entries[0]?.[0] || null;
+        });
 
         // Same shared per-province race allocateProvinceSeats() runs at game start.
         const seatsWon = runProvinceElection();
+
+        // Which provinces flipped to a different leading party, and a plausible reason drawn
+        // from the same terms runProvinceElection()'s weight formula actually scored on
+        // (ideology affinity, investment record, the player's own campaign effort) -- computed
+        // before playerCampaignBoost is spent/reset below, so that signal is still live.
+        const flips = state.provinces.map(p => {
+            const entries = Object.entries(p.lastResult || {}).sort((a, b) => b[1] - a[1]);
+            const newLeaderId = entries[0]?.[0];
+            const oldLeaderId = prevLeaders[p.name];
+            if (!oldLeaderId || !newLeaderId || newLeaderId === oldLeaderId) return null;
+            const oldParty = state.parties.find(x => x.id === oldLeaderId);
+            const newParty = state.parties.find(x => x.id === newLeaderId);
+            if (!oldParty || !newParty) return null;
+            const affinity = Data.FACTION_IDEOLOGY_AFFINITY[p.baseFaction];
+            const reasons = [];
+            if (affinity && newParty.ideologies.includes(affinity) && !oldParty.ideologies.includes(affinity)) reasons.push(`แนวคิดพรรคใหม่ตรงกับฐานเสียง${p.baseFaction}`);
+            if (newParty.status === "Government" && (p.investmentLevel ?? 50) > 60) reasons.push("จังหวัดได้รับการลงทุนสูงภายใต้รัฐบาลใหม่");
+            if (oldParty.status === "Government" && (p.investmentLevel ?? 50) < 40) reasons.push("จังหวัดถูกทอดทิ้งภายใต้รัฐบาลเดิม");
+            if (newParty.id === state.player.party.id && (p.playerCampaignBoost || 0) > 15) reasons.push("ผลจากการลงพื้นที่หาเสียงของท่าน");
+            if (reasons.length === 0) reasons.push("กระแสความนิยมพรรคเปลี่ยนไปโดยรวม");
+            return { name: p.name, seats: p.seats, from: oldParty.name, fromColor: oldParty.color, to: newParty.name, toColor: newParty.color, reasons };
+        }).filter(Boolean).sort((a, b) => b.seats - a.seats);
 
         const results = state.parties.map(p => ({ party: p, seats: seatsWon[p.id], prevSeats: prevSeats[p.id], prevStatus: p.status }));
         results.forEach(r => { r.party.seats = r.seats; });
@@ -1304,13 +1345,31 @@ export const engine = {
         // The player's own MP prestige/trust, faction approval, institutionalLegitimacy and news
         // history all carry over untouched into the new term; only cabinet posts and this term's
         // spent campaign effort reset, same as they would for a winning term too.
+        // Post-election analysis (Stage B4): which provinces actually changed hands and why,
+        // instead of only ever showing the resulting seat table -- capped and ranked by seat
+        // count so a nationwide realignment doesn't dump all 77 provinces on the player at once.
+        const flipRows = flips.slice(0, 8).map(f => `
+            <div class="border-b border-stone-200 py-1.5">
+                <div class="flex justify-between items-center text-xs">
+                    <span class="font-bold">${f.name} <span class="text-[9px] text-stone-500 font-normal">(${f.seats} ที่นั่ง)</span></span>
+                    <span class="font-mono text-[10px]"><span style="color:${f.fromColor}">${f.from}</span> → <span style="color:${f.toColor}" class="font-bold">${f.to}</span></span>
+                </div>
+                <div class="text-[9px] text-stone-500">${f.reasons.join(' · ')}</div>
+            </div>
+        `).join('');
         document.getElementById('event-title').innerText = "ผลการเลือกตั้งทั่วไป";
         document.getElementById('event-desc').innerHTML = `
             <div class="text-center mb-4">
                 <div class="text-2xl font-black uppercase tracking-widest ${won ? 'text-emerald-700' : 'text-red-700'}">${won ? 'พรรคท่านจัดตั้งรัฐบาลต่อ' : 'พรรคท่านหลุดจากอำนาจ'}</div>
                 ${!won ? `<div class="text-xs text-stone-500 mt-2">พรรคท่านเป็น${state.player.party.status === "Opposition" ? "ฝ่ายค้าน" : "กลาง"}ในสมัยนี้ -- ลงพื้นที่หาเสียงและสร้างฐานใหม่เพื่อกลับมาสมัยหน้า</div>` : ''}
             </div>
-            <div class="text-left max-h-[320px] overflow-y-auto scroll-custom">${rows}</div>
+            <div class="text-left max-h-[220px] overflow-y-auto scroll-custom">${rows}</div>
+            ${flips.length > 0 ? `
+            <div class="mt-3 pt-3 border-t-2 border-black">
+                <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2">จังหวัดที่พลิกขั้ว (${flips.length})</div>
+                <div class="text-left max-h-[220px] overflow-y-auto scroll-custom">${flipRows}</div>
+                ${flips.length > 8 ? `<div class="text-[9px] text-stone-400 text-center mt-1">และอีก ${flips.length - 8} จังหวัด</div>` : ''}
+            </div>` : `<div class="text-[9px] text-stone-400 text-center mt-3 pt-3 border-t-2 border-black">ไม่มีจังหวัดใดพลิกขั้วในสมัยนี้</div>`}
         `;
         document.getElementById('event-options').innerHTML = won
             ? `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-4 bg-black text-white font-bold border-2 border-black text-lg hover:opacity-90">เริ่มสมัยประชุมใหม่</button>`
