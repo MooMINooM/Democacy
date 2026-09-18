@@ -8,6 +8,7 @@ export const state = {
     provinces: [],
     parties: [],
     leaders: [], 
-    activePolicies: [], 
-    news: []
+    activePolicies: [],
+    news: [],
+    crisisTriggerLog: []
 };

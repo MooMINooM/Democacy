@@ -872,16 +872,37 @@ export const gameClock = {
         // Protest Pressure (Phase 1): a visible, structural buildup -- unemployment, crime, low
         // approval and low transparency all feed it -- instead of a blind dice roll, so the
         // player can see unrest coming before it erupts (randomness then only decides *when*).
-        // Balance Pass v1: this block used to re-derive each formula inline instead of calling the
-        // getXBreakdown() functions the why-buttons already read, which is exactly the "shared pure
-        // function" split the project keeps having to fix after the two copies drift apart. Calling
-        // the real breakdown functions here removes that risk going forward.
-        const targetPressure = Math.max(0, Math.min(100, Object.values(getPressureBreakdown()).reduce((s, v) => s + v, 0)));
+        // Balance Pass v1 correction: a first pass here called the getXBreakdown() why-panel
+        // functions directly instead of duplicating each formula, on the assumption the two were
+        // just accidentally-duplicated copies of the same math (the "shared pure function"
+        // pattern the project keeps having to apply elsewhere). They're NOT -- the breakdown
+        // functions floor each individual term at 0 on purpose, so a term literally labeled
+        // "transparency is low" never shows a confusing negative contribution when transparency
+        // is actually high. The calculation below intentionally allows a strongly healthy term to
+        // go negative and offset a bad one before the total is clamped, which per-term flooring
+        // silently removes -- verified by testing: it turned every one of these pressures strictly
+        // non-decreasing across mixed-signal scenarios, which was the direct cause of a coup-rate
+        // explosion found in Monte Carlo testing (even the Passive control, which never coups
+        // otherwise, started coup-ing within ~8 years). Reverted to the original raw-sum-then-
+        // clamp formula; only the four getXBreakdown() functions stay in sync for their own
+        // why-panel/telemetry callers, not for driving the actual pressure value.
+        const targetPressure = Math.max(0, Math.min(100,
+            (state.world.unemployment - 15) * 1.5 +
+            (state.world.crime - 30) * 1.0 +
+            (50 - state.world.approval) * 1.2 +
+            (100 - state.world.transparency) * 0.3
+        ));
         state.world.protestPressure = Math.max(0, Math.min(100, state.world.protestPressure + (targetPressure - state.world.protestPressure) * 0.05 * state.speed));
 
         // Event Pressure Framework (Stage C1): the same structural-buildup treatment for the
         // three other trigger checks below, which used to be a flat or hard-gated random roll.
-        const targetCollapsePressure = Math.max(0, Math.min(100, Object.values(getCoalitionCollapseBreakdown()).reduce((s, v) => s + v, 0)));
+        const coalitionParties = state.parties.filter(p => p.status === "Government" && p.id !== state.player.party.id);
+        const avgCoalitionTrust = coalitionParties.length > 0 ? coalitionParties.reduce((s, p) => s + (p.trust ?? 70), 0) / coalitionParties.length : 100;
+        const targetCollapsePressure = Math.max(0, Math.min(100,
+            (70 - avgCoalitionTrust) * 1.2 +
+            (50 - state.world.cabinetStability) * 0.8 +
+            (40 - state.world.approval) * 0.6
+        ));
         state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, state.world.coalitionCollapsePressure + (targetCollapsePressure - state.world.coalitionCollapsePressure) * 0.05 * state.speed));
 
         // Fiscal Emergency (Balance Pass v1): computed before economicCrisisPressure below so that
@@ -910,10 +931,23 @@ export const gameClock = {
             state.world.fiscalWatchWarned = false;
         }
 
-        const targetEconomicPressure = Math.max(0, Math.min(100, Object.values(getEconomicCrisisBreakdown()).reduce((s, v) => s + v, 0)));
+        // fiscalStress*0.3 replaces the old 3-tier fiscalStrain term (see getEconomicCrisisBreakdown()'s
+        // own comment) -- it's already non-negative by construction, so no floor-mismatch risk here.
+        const targetEconomicPressure = Math.max(0, Math.min(100,
+            Math.max(0, -state.world.growth) * 1.5 +
+            (state.world.unemployment - 20) * 1.2 +
+            (state.world.fiscalStress ?? 0) * 0.3
+        ));
         state.world.economicCrisisPressure = Math.max(0, Math.min(100, state.world.economicCrisisPressure + (targetEconomicPressure - state.world.economicCrisisPressure) * 0.05 * state.speed));
 
-        const targetCoupPressure = Math.max(0, Math.min(100, Object.values(getCoupBreakdown()).reduce((s, v) => s + v, 0)));
+        const army = state.factions.find(f => f.name === "กองทัพ");
+        const armyApproval = army ? army.approval : 50;
+        const targetCoupPressure = Math.max(0, Math.min(100,
+            (40 - state.world.transparency) * 0.8 +
+            (50 - armyApproval) * 0.6 +
+            (40 - state.world.cabinetStability) * 0.5 +
+            (state.world.protestPressure - 50) * 0.3
+        ));
         state.world.coupPressure = Math.max(0, Math.min(100, state.world.coupPressure + (targetCoupPressure - state.world.coupPressure) * 0.05 * state.speed));
 
         if(crossedDayOfMonth(prevDate, state.date, 15)) {
@@ -936,7 +970,10 @@ export const gameClock = {
         // pre-existing gap from before this pressure framework, surfaced by testing this check
         // firing far more often than intended once coalitionCollapsePressure genuinely rewards checking.
         if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && state.player.party.status === "Government" && state.world.coalitionCollapsePressure > 20) {
-           if(Math.random() < (state.world.coalitionCollapsePressure / 100) * 0.3) engine.triggerNoConfidence();
+           const roll = Math.random(); const chance = (state.world.coalitionCollapsePressure / 100) * 0.3;
+           const fired = roll < chance;
+           if (fired) engine.logCrisisTrigger("noConfidence", getCoalitionCollapseBreakdown(), state.world.coalitionCollapsePressure, chance, roll);
+           if (fired) engine.triggerNoConfidence();
         }
         // tick() fires once per real second regardless of state.speed, but each tick now covers
         // `state.speed` in-game days -- so every random-event check below is scaled by state.speed
@@ -947,7 +984,16 @@ export const gameClock = {
         if(Math.random() < (0.01 + (Math.max(state.world.protestPressure, state.world.economicCrisisPressure) / 100) * 0.03) * state.speed) engine.triggerCrisis();
         // Coup Pressure replaces the old hard transparency<40 AND army<50 gate -- both terms
         // already feed the pressure itself, continuously, instead of an all-or-nothing switch.
-        if(Math.random() < (state.world.coupPressure / 100) * 0.015 * state.speed) engine.triggerCoup();
+        // Crisis Calibration (Balance Pass v1 Phase 2): the doc's own ask -- log the pressure
+        // breakdown AND the actual random roll right at the moment a coup fires, not just the
+        // fact that one happened, so a real distribution of "how close/far" each trigger was can
+        // be examined after the fact instead of guessing from anecdote.
+        {
+            const roll = Math.random(); const chance = (state.world.coupPressure / 100) * 0.015 * state.speed;
+            const fired = roll < chance;
+            if (fired) engine.logCrisisTrigger("coup", getCoupBreakdown(), state.world.coupPressure, chance, roll);
+            if (fired) engine.triggerCoup();
+        }
         
         // The 5 policy-driven national stats: apply/decay their modifiers, then drift back
         // toward baseline like faction/party trust does, so a policy's effect fades unless renewed.
@@ -1382,6 +1428,17 @@ export const engine = {
         if (!party.legacy) return;
         const l = party.legacy;
         party.legacyTrust = Math.max(0, Math.min(100, l.integrity * 0.3 + l.delivery * 0.25 + l.governance * 0.25 + l.consistency * 0.2));
+    },
+
+    // Crisis Calibration (Balance Pass v1 Phase 2): "บันทึก coup trigger log ก่อนเกิดเหตุการณ์...
+    // แสดง contribution ของ Transparency, Army Approval, Cabinet Stability, Protest Spillover...
+    // บันทึก pressure และ random roll ณ เวลาที่ trigger" -- one shared logger for both coup and
+    // no-confidence (same shape, just a different breakdown function feeding it), capped like
+    // legacyHistory so a long game doesn't grow this unbounded.
+    logCrisisTrigger(type, breakdown, pressure, rollChance, roll) {
+        state.crisisTriggerLog = state.crisisTriggerLog || [];
+        state.crisisTriggerLog.unshift({ date: state.date.toLocaleDateString('th-TH'), type, breakdown, pressure: +pressure.toFixed(1), rollChance: +rollChance.toFixed(4), roll: +roll.toFixed(4) });
+        if (state.crisisTriggerLog.length > 50) state.crisisTriggerLog.length = 50;
     },
 
     // Spreads a policy's impact on a faction over `days` instead of an instant jolt,
