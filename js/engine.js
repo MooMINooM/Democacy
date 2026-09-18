@@ -98,11 +98,48 @@ function provinceOutput(prov) {
 // Numbers, Different Context, Different Result.
 function getNationalContext() {
     const economicCycle = state.world.growth > 4 ? "Boom" : state.world.growth > 0.5 ? "Expansion" : state.world.growth > -2 ? "Slowdown" : "Recession";
-    const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
-    const politicalClimate = state.world.cabinetStability < 40 ? "Crisis" : daysToElection <= 90 ? "Election Mode" : (state.world.approval >= 35 && state.world.approval <= 50) ? "Polarized" : "Stable";
-    const budgetTrend = state.history.budget.length >= 2 ? state.history.budget[state.history.budget.length - 1] - state.history.budget[0] : 0;
-    const fiscalCondition = budgetTrend < 0 ? "Debt Stress" : budgetTrend < state.world.nationalBudget * 0.01 ? "Tight" : budgetTrend < state.world.nationalBudget * 0.05 ? "Normal" : "Surplus";
+    const politicalClimate = getPoliticalClimate();
+    // Stage A fix: a flat/zero trend (always true right at game start, even with a seeded
+    // multi-entry history, since every seeded entry is identical) used to read as "Tight" because
+    // 0 is less than any positive 1%-of-budget threshold -- a brand new game with a perfectly
+    // healthy 3.4T budget opened by claiming the treasury was already strained. "No real budget
+    // movement yet" is now its own case instead of falling through into the worst-sounding band.
+    const budgetHistory = state.history.budget;
+    const hasBudgetTrend = budgetHistory.length >= 2 && budgetHistory.some(v => v !== budgetHistory[0]);
+    const budgetTrend = hasBudgetTrend ? budgetHistory[budgetHistory.length - 1] - budgetHistory[0] : 0;
+    const fiscalCondition = !hasBudgetTrend ? "Normal" : budgetTrend < 0 ? "Debt Stress" : budgetTrend < state.world.nationalBudget * 0.01 ? "Tight" : budgetTrend < state.world.nationalBudget * 0.05 ? "Normal" : "Surplus";
     return { economicCycle, politicalClimate, fiscalCondition };
+}
+// Political Climate v2 (Stage A): the old rule called anything with 35-50% approval "Polarized",
+// which meant a perfectly ordinary fresh game (approval starts at ~50) opened already reading as
+// divided before the player had done anything. Faction disagreement (how far the most and least
+// approving factions are from each other) and protest pressure are the real polarization signals;
+// approval and election proximity now only push a state that's already tense over the edge, the
+// same reasoning the roadmap gives for why a calm 50%-approval start should read as Competitive.
+function getPoliticalClimateSignals() {
+    const factionApprovals = state.factions.map(f => f.approval);
+    const factionSpread = Math.max(...factionApprovals) - Math.min(...factionApprovals);
+    const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+    return { factionSpread, daysToElection, nearElection: daysToElection <= 90 };
+}
+function getPoliticalClimate() {
+    const { factionSpread, nearElection } = getPoliticalClimateSignals();
+    if (state.world.cabinetStability < 35 || state.world.protestPressure > 70) return "Crisis";
+    if (factionSpread > 45 || (state.world.protestPressure > 55 && factionSpread > 30)) return "Polarized";
+    if (nearElection || state.world.protestPressure > 35 || factionSpread > 30 || state.world.approval < 40) return "Tense";
+    if (factionSpread > 15 || state.world.protestPressure > 15 || state.world.approval < 55) return "Competitive";
+    return "Calm";
+}
+// Explainability: same +/- format as every other why-button, positive meaning calmer.
+function getPoliticalClimateBreakdown() {
+    const { factionSpread, daysToElection, nearElection } = getPoliticalClimateSignals();
+    return {
+        "ความมั่นคงคณะรัฐมนตรี": state.world.cabinetStability - 50,
+        "ความแตกแยกระหว่างกลุ่มผลประโยชน์": -(factionSpread - 20),
+        "แรงกดดันประท้วงสะสม": -(state.world.protestPressure - 20),
+        "ความนิยมรัฐบาล": state.world.approval - 50,
+        "ใกล้วันเลือกตั้ง": nearElection ? -(90 - Math.min(90, daysToElection)) * 0.5 : 0
+    };
 }
 function getProvinceContext(prov) {
     const inv = prov.investmentLevel ?? 50;
@@ -140,6 +177,47 @@ function getApprovalBreakdown() {
 }
 function getGrowthBreakdown() { return state.world.growthBreakdown || {}; }
 function getCabinetStabilityBreakdown() { return state.world.cabinetStabilityBreakdown || {}; }
+
+// Initial World Consistency (Stage A): the exact math processMonthlyUpdate() already runs every
+// month, pulled out so engine.init() can compute a real day-one value instead of a hardcoded
+// placeholder the first monthly update would silently overwrite anyway -- confirmed by
+// playtesting that cabinetStability used to open at a flat 80 and visibly crash to ~43 within two
+// weeks once the real formula first ran, reading as an unexplained instant crisis.
+function computeCabinetStability() {
+    const govSeats = state.parties.filter(p => p.status === "Government").reduce((s, p) => s + p.seats, 0);
+    let factionScore = 0, prestigeScore = 0, minCount = 0;
+    Object.values(Data.MINISTRIES).forEach(m => { if (m.currentMinister) { const f = state.factions.find(fx => fx.name === m.currentMinister.status); if (f) factionScore += f.approval; prestigeScore += m.currentMinister.prestige ?? 50; minCount++; } });
+    const cabinetPrestigeBonus = minCount > 0 ? (prestigeScore / minCount - 50) * 0.15 : 0;
+    const breakdown = {
+        "เสียงข้างมากในสภา": govSeats / Data.TOTAL_SEATS * 50,
+        "ความพอใจกลุ่มที่มีรัฐมนตรี": minCount > 0 ? (factionScore / minCount) * 0.5 : 25,
+        "ชื่อเสียงคณะรัฐมนตรี": cabinetPrestigeBonus,
+        "แรงกดดันจากวิกฤต/เรื่องอื้อฉาว": -(state.world.stabilityPenalty || 0)
+    };
+    const value = Math.max(0, Math.floor(Object.values(breakdown).reduce((s, v) => s + v, 0)));
+    return { value, breakdown };
+}
+// currentGrowth === null means "no prior value to ease in from" (game just started) -- the
+// result becomes the target outright instead of blending toward it, since there's nothing to
+// blend from yet.
+function computeGrowth(currentGrowth) {
+    const totalOutput = state.factions.reduce((s, f) => s + factionOutput(f), 0);
+    const weightedApproval = state.factions.reduce((s, f) => s + (f.approval - 50) * factionOutput(f), 0) / totalOutput;
+    const qualityOfLife = (state.world.health + state.world.education + (100 - state.world.crime) + state.world.environment) / 4 - state.world.unemployment;
+    const totalPop = state.provinces.reduce((s, p) => s + p.pop, 0);
+    const totalProduction = state.provinces.reduce((s, prov) => s + provinceOutput(prov), 0);
+    const productionPerCapita = totalProduction / totalPop;
+    const productionBias = state.world.baseProductionPerCapita ? (productionPerCapita / state.world.baseProductionPerCapita - 1) * 8 : 0;
+    const breakdown = {
+        "แรงหนุนจากกลุ่มผลประโยชน์": weightedApproval * 0.16,
+        "คุณภาพชีวิตประชาชน": (qualityOfLife - 40) * 0.03,
+        "ผลผลิตอุตสาหกรรมเทียบฐาน": productionBias,
+        "ผลกระทบวิกฤตเศรษฐกิจล่าสุด": -(state.world.growthPenalty || 0)
+    };
+    const targetGrowth = Object.values(breakdown).reduce((s, v) => s + v, 0);
+    const value = currentGrowth === null ? targetGrowth : currentGrowth + (targetGrowth - currentGrowth) * 0.3 + (Math.random() - 0.5) * 0.4;
+    return { value, breakdown, productionBias };
+}
 
 // State Capacity (Phase 4): "Policy Passed" and "Policy Effective" are different things -- a
 // bill clearing parliament doesn't mean the state can deliver it in full. One pure function so
@@ -263,7 +341,11 @@ export const gameClock = {
         const prevDate = new Date(state.date);
         state.date.setDate(state.date.getDate() + state.speed);
         Object.values(Data.MINISTRIES).forEach(m => { if(m.cooldown > 0) m.cooldown -= state.speed; m.workload = Math.max(0, (m.workload || 0) - 1.2 * state.speed); });
-        state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; } } });
+        // Time Control (Stage A): a policy reaching a vote is a decision point same as an
+        // election or crisis -- the player used to have to notice the badge on the policy list
+        // themselves while time kept running past it. Only fires once per stage (isDeliberating
+        // flips false right here, so this block won't run again for the same stage next tick).
+        state.activePolicies.forEach(p => { if(p.isDeliberating) { p.remainingDays -= state.speed; if(p.remainingDays <= 0) { p.remainingDays = 0; p.isDeliberating = false; this.setSpeed(0); engine.addNews(`${p.name}พร้อมลงมติ`, `ร่างนโยบายผ่านการพิจารณาวาระที่ ${p.stage}/3 แล้ว รอท่านเรียกลงมติ`); } } });
         state.world.stabilityPenalty = Math.max(0, (state.world.stabilityPenalty || 0) - 0.5 * state.speed);
         state.world.growthPenalty = Math.max(0, (state.world.growthPenalty || 0) - 0.15 * state.speed);
         state.leaders.forEach(l => {
@@ -382,19 +464,29 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown,
 
     init() {
         state.voteModifier = null;
         state.world.transparency = 100;
         state.world.stabilityPenalty = 0;
         Object.entries(Data.WORLD_STAT_META).forEach(([stat, meta]) => { state.world[stat] = meta.baseline; });
-        state.world.statMods = { unemployment: [], crime: [], health: [], education: [], environment: [] };
+        state.world.statMods = { unemployment: [], crime: [], health: [], education: [], environment: [], military: [] };
         state.world.electionDay = new Date(state.date);
         state.world.electionDay.setDate(state.world.electionDay.getDate() + Data.ELECTION_TERM_DAYS);
         state.history = { approval: [], budget: [] };
         state.lastVoteResults = null;
         state.lastVoteLog = [];
+
+        // Opening Situation Generator (Stage A): a little variance on the seed stats so not
+        // every game starts from an identical unemployment/crime/health/education, but every
+        // derived value below (approval, growth, pressure, cabinet stability) is computed FROM
+        // these, so the resulting opening situation stays internally consistent -- a bad-luck
+        // roll on unemployment shows up in growth and protest pressure too, not just its own tile.
+        state.world.unemployment = Math.max(10, state.world.unemployment + (Math.random() * 10 - 5));
+        state.world.crime = Math.max(15, state.world.crime + (Math.random() * 12 - 6));
+        state.world.health = Math.max(30, Math.min(90, state.world.health + (Math.random() * 14 - 7)));
+        state.world.education = Math.max(30, Math.min(90, state.world.education + (Math.random() * 14 - 7)));
 
         state.factions = Data.FACTION_DATA.map(f => ({ ...f, approval: 50 + (Math.random() * 10 - 5), modifiers: [] }));
         state.foreign = Data.FOREIGN_POWERS.map(c => ({ ...c, relation: 50 + (Math.random() * 20 - 10), modifiers: [] }));
@@ -402,9 +494,34 @@ export const engine = {
         this.generateLeaders();
         if(state.provinces.length === 0) this.generateProvinces();
 
+        // Initial World Consistency (Stage A): a government taking office already has a cabinet
+        // on day one, and every derived stat below reads from the exact same live formulas
+        // tick()/processMonthlyUpdate() use later -- not a hardcoded placeholder the first month
+        // would silently overwrite anyway. Confirmed by playtesting: cabinetStability used to
+        // open at a flat 80 and visibly crash to ~43 within two weeks once the real formula first
+        // ran, with no crisis or player mistake behind it -- just a number that never matched its
+        // own formula. Applies regardless of who ends up governing: a sitting coalition already
+        // has ministers whether the player joined it, opposes it, or sits outside it entirely.
+        autoAppointCabinet();
+        state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
+        const { value: cabinetStability, breakdown: cabinetStabilityBreakdown } = computeCabinetStability();
+        state.world.cabinetStability = cabinetStability;
+        state.world.cabinetStabilityBreakdown = cabinetStabilityBreakdown;
+        const { value: growth, breakdown: growthBreakdown } = computeGrowth(null);
+        state.world.growth = growth;
+        state.world.growthBreakdown = growthBreakdown;
+        const openingPressureBreakdown = getPressureBreakdown();
+        state.world.protestPressure = Math.max(0, Math.min(100, Object.values(openingPressureBreakdown).reduce((s, v) => s + v, 0)));
+
         ui.renderCabinet(); ui.renderMinistryList();
         this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
-        for(let i=0; i<6; i++) { state.history.approval.push(50); state.history.budget.push(state.world.nationalBudget); }
+        // A real baseline for every trend arrow and why-breakdown from the very first render,
+        // instead of an empty history that would only start showing a trend a month in.
+        for(let i=0; i<6; i++) { state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget); }
+        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
+            state.history[key] = [];
+            for (let i = 0; i < 6; i++) state.history[key].push(state.world[key]);
+        });
         setInterval(() => gameClock.tick(), 1000);
     },
 
@@ -549,32 +666,12 @@ export const engine = {
 
     processMonthlyUpdate() {
         // Growth tracks how the economically-weighted population feels, not a plain random walk:
-        // a faction with a bigger production base (basePop * wealth) swings growth more when its approval moves.
-        const totalOutput = state.factions.reduce((s, f) => s + factionOutput(f), 0);
-        const weightedApproval = state.factions.reduce((s, f) => s + (f.approval - 50) * factionOutput(f), 0) / totalOutput;
-        // A healthier, better-educated, safer, cleaner, more employed country grows faster --
-        // this is the other half of the policy web: worldImpact stats feed back into growth,
-        // not just faction approval.
-        const qualityOfLife = (state.world.health + state.world.education + (100 - state.world.crime) + state.world.environment) / 4 - state.world.unemployment;
-
-        // Provincial production (Phase 5): how much the country's actual industries are putting
-        // out right now versus the day the game started, driven by each province's industry type,
-        // the national stats it's sensitive to, and any investment poured into it.
-        const totalPop = state.provinces.reduce((s, p) => s + p.pop, 0);
-        const totalProduction = state.provinces.reduce((s, prov) => s + provinceOutput(prov), 0);
-        const productionPerCapita = totalProduction / totalPop;
-        const productionBias = state.world.baseProductionPerCapita ? (productionPerCapita / state.world.baseProductionPerCapita - 1) * 8 : 0;
-
-        const targetGrowth = weightedApproval * 0.16 + (qualityOfLife - 40) * 0.03 + productionBias - (state.world.growthPenalty || 0);
-        state.world.growth = state.world.growth + (targetGrowth - state.world.growth) * 0.3 + (Math.random() - 0.5) * 0.4;
-        // Explainability (Phase 2): snapshot this month's terms so the UI can show why growth
-        // moved, ranked by size, instead of just the resulting percentage.
-        state.world.growthBreakdown = {
-            "แรงหนุนจากกลุ่มผลประโยชน์": weightedApproval * 0.16,
-            "คุณภาพชีวิตประชาชน": (qualityOfLife - 40) * 0.03,
-            "ผลผลิตอุตสาหกรรมเทียบฐาน": productionBias,
-            "ผลกระทบวิกฤตเศรษฐกิจล่าสุด": -(state.world.growthPenalty || 0)
-        };
+        // a faction with a bigger production base (basePop * wealth) swings growth more when its
+        // approval moves. Uses the same computeGrowth() engine.init() runs once for the opening
+        // situation, so the formula can't drift between the two call sites.
+        const { value: growthValue, breakdown: growthBreakdown, productionBias } = computeGrowth(state.world.growth);
+        state.world.growth = growthValue;
+        state.world.growthBreakdown = growthBreakdown;
 
         // Economy v2 (Phase 5): industries have only ever been on the receiving end of
         // unemployment (INDUSTRY_TYPES.sensitivity), never fed back into it -- a border conflict
@@ -647,29 +744,10 @@ export const engine = {
             if (f.popHistory.length > 6) f.popHistory.shift();
         });
 
-        state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
-        if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
-        // Trend arrows (Phase 2): a short rolling history per stat, same 6-entry window as
-        // approval/budget already use, just so the UI can say "up from last month" not just
-        // show a bare number.
-        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
-            if (!state.history[key]) state.history[key] = [];
-            state.history[key].push(state.world[key]);
-            if (state.history[key].length > 6) state.history[key].shift();
-        });
-        const govSeats = state.parties.filter(p => p.status === "Government").reduce((s, p) => s + p.seats, 0);
-        // A minister's prestige feeds cabinetStability alongside their base faction's approval:
-        // a well-known appointee reassures the public, an unknown backbencher does not.
-        let factionScore = 0; let prestigeScore = 0; let minCount = 0;
-        Object.values(Data.MINISTRIES).forEach(m => { if(m.currentMinister) { const f = state.factions.find(fx => fx.name === m.currentMinister.status); if(f) factionScore += f.approval; prestigeScore += m.currentMinister.prestige ?? 50; minCount++; } });
-        const cabinetPrestigeBonus = minCount > 0 ? (prestigeScore / minCount - 50) * 0.15 : 0;
-        state.world.cabinetStability = Math.max(0, Math.floor((govSeats / Data.TOTAL_SEATS * 50) + (minCount > 0 ? (factionScore / minCount) * 0.5 : 25) + cabinetPrestigeBonus - (state.world.stabilityPenalty || 0)));
-        state.world.cabinetStabilityBreakdown = {
-            "เสียงข้างมากในสภา": govSeats / Data.TOTAL_SEATS * 50,
-            "ความพอใจกลุ่มที่มีรัฐมนตรี": minCount > 0 ? (factionScore / minCount) * 0.5 : 25,
-            "ชื่อเสียงคณะรัฐมนตรี": cabinetPrestigeBonus,
-            "แรงกดดันจากวิกฤต/เรื่องอื้อฉาว": -(state.world.stabilityPenalty || 0)
-        };
+        // Same shared formula engine.init() uses for the opening situation.
+        const { value: cabinetStabilityValue, breakdown: cabinetStabilityBreakdown } = computeCabinetStability();
+        state.world.cabinetStability = cabinetStabilityValue;
+        state.world.cabinetStabilityBreakdown = cabinetStabilityBreakdown;
         state.world.approval = state.factions.reduce((acc, f) => acc + f.approval, 0) / state.factions.length;
 
         // Long-term Memory (Phase 1): institutionalLegitimacy moves by at most a few tenths a
@@ -694,6 +772,18 @@ export const engine = {
         // Trust slowly drifts back toward neutral each month, so grudges/goodwill fade but don't vanish instantly
         state.leaders.forEach(l => { l.trust = l.trust + (50 - l.trust) * 0.1; });
         state.parties.forEach(p => { p.trust = (p.trust ?? 70) + (70 - (p.trust ?? 70)) * 0.1; });
+
+        // Trend arrows (Phase 2): a short rolling history per stat, so the UI can say "up from
+        // last month" not just show a bare number. Pushed last, after every stat this month has
+        // actually finished recomputing -- approval and cabinetStability used to get pushed
+        // *before* their own recompute above, so their trend arrow was permanently a month stale.
+        state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
+        if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
+        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
+            if (!state.history[key]) state.history[key] = [];
+            state.history[key].push(state.world[key]);
+            if (state.history[key].length > 6) state.history[key].shift();
+        });
     },
     
     lobbyIndividual(mpId) {
