@@ -6,6 +6,7 @@ export const ui = {
     // State
     currentPartyView: null,
     mpListPage: 1,
+    mapView: 'economic', // Province Political Layer (Stage B3): 'economic' | 'political' | 'social'
 
     // --- Main Tab Logic ---
     tab(t) { 
@@ -127,6 +128,7 @@ export const ui = {
         this.renderContextPanel();
         this.renderEconomyPanel();
         this.renderSocietyPanel();
+        this.renderBattlegroundPanel();
     },
 
     // Dynamic Context Engine (Phase 1): shows the derived situational labels and the two new
@@ -206,6 +208,29 @@ export const ui = {
                     ${ctx.shrinkingClass ? ` &middot; กลุ่ม "${ctx.shrinkingClass}" กำลังหดตัว` : ''}
                 </div>
             </button>`;
+    },
+
+    // Election Readability (Stage B4): the provinces actually worth watching before the next
+    // vote, reusing getBattlegroundProvinces() (built on Stage B3's political layer) -- clicking
+    // a row jumps straight to that province on the map instead of making the player hunt for it.
+    renderBattlegroundPanel() {
+        const cont = document.getElementById('battleground-panel'); if (!cont) return;
+        const battlegrounds = engine.getBattlegroundProvinces(6);
+        if (battlegrounds.length === 0) {
+            cont.innerHTML = `<div class="text-[10px] text-stone-400 italic text-center py-2">ยังไม่มีจังหวัดที่สูสีในตอนนี้</div>`;
+            return;
+        }
+        const COMPETITIVE_LABELS = { Battleground: ["สมรภูมิ", "text-red-700"], Leaning: ["เอียงข้างชัดเจน", "text-amber-700"] };
+        cont.innerHTML = battlegrounds.map(b => `
+            <button onclick="ui.tab('map'); ui.showProvinceDetail('${b.name}');" class="w-full text-left border-2 border-black p-2.5 hover:bg-stone-50 transition">
+                <div class="flex justify-between items-center text-[10px] mb-1">
+                    <span class="font-bold">${b.name} <span class="text-stone-500 font-normal">(${b.seats} ที่นั่ง · ${b.region})</span></span>
+                    <span class="font-bold ${COMPETITIVE_LABELS[b.competitiveness][1]}">${COMPETITIVE_LABELS[b.competitiveness][0]}</span>
+                </div>
+                <div class="w-full h-1.5 bg-red-200 border border-black flex overflow-hidden"><div class="h-full bg-blue-500" style="width:${b.govSupport}%"></div></div>
+                <div class="flex justify-between text-[9px] text-stone-500 mt-0.5"><span>รัฐบาล ${b.govSupport.toFixed(0)}%</span><span>ฝ่ายค้าน ${b.oppSupport.toFixed(0)}%</span></div>
+            </button>
+        `).join('');
     },
 
     renderNationalStats() {
@@ -447,18 +472,46 @@ export const ui = {
     },
 
     // --- PROVINCE MAP ---
+    // Province Political Layer (Stage B3): the map reads as three lenses on the same 77
+    // provinces -- economic (investment), political (who's actually ahead here right now), and
+    // social (gaining or losing people) -- instead of one fixed color scheme that only ever
+    // showed local-faction approval next to an industry icon.
     renderProvinceMap() {
         const cont = document.getElementById('province-map'); if (!cont) return;
         const byRegion = {};
         Data.REGIONS.forEach(r => byRegion[r] = state.provinces.filter(p => p.region === r));
 
+        const toggleCont = document.getElementById('map-view-toggle');
+        if (toggleCont) {
+            const VIEWS = [
+                { id: 'economic', label: 'เศรษฐกิจ', icon: 'fa-industry' },
+                { id: 'political', label: 'การเมือง', icon: 'fa-landmark' },
+                { id: 'social', label: 'สังคม', icon: 'fa-people-group' }
+            ];
+            toggleCont.innerHTML = VIEWS.map(v => `
+                <button onclick="ui.mapView='${v.id}'; ui.renderProvinceMap();" class="px-3 py-2 border-2 border-black text-[10px] font-bold uppercase flex items-center gap-1.5 transition ${this.mapView === v.id ? 'bg-black text-white' : 'bg-white hover:bg-stone-100'}">
+                    <i class="fas ${v.icon}"></i>${v.label}
+                </button>`).join('');
+        }
+
         const chip = (p) => {
-            const faction = state.factions.find(f => f.name === p.baseFaction);
-            const approval = faction ? faction.approval : 50;
-            const color = approval > 60 ? '#10b981' : (approval < 40 ? '#ef4444' : '#f59e0b');
-            const sizeClass = p.pop > 1200000 ? 'text-sm px-3 py-2' : (p.pop > 500000 ? 'text-xs px-2.5 py-1.5' : 'text-[10px] px-2 py-1');
             const industry = Data.INDUSTRY_TYPES[p.industry];
-            return `<button onclick="ui.showProvinceDetail('${p.name}')" title="${industry?.label || ''}" class="border-2 border-black font-bold ${sizeClass} bg-white hover:-translate-y-0.5 transition shadow-[2px_2px_0_#000] hover:shadow-[3px_3px_0_#000] flex items-center gap-1.5" style="border-left: 6px solid ${color}"><i class="fas ${industry?.icon || 'fa-industry'} text-stone-400 text-[10px]"></i>${p.name}</button>`;
+            const sizeClass = p.pop > 1200000 ? 'text-sm px-3 py-2' : (p.pop > 500000 ? 'text-xs px-2.5 py-1.5' : 'text-[10px] px-2 py-1');
+            let color, badge = '';
+            if (this.mapView === 'political') {
+                const layer = engine.getProvincePoliticalLayer(p);
+                color = layer.leaning === 'Government' ? '#3b82f6' : (layer.leaning === 'Opposition' ? '#ef4444' : '#94a3b8');
+                if (layer.competitiveness === 'Battleground') badge = `<i class="fas fa-bullseye text-red-600 text-[9px]" title="สมรภูมิ"></i>`;
+            } else if (this.mapView === 'social') {
+                const layer = engine.getProvincePoliticalLayer(p);
+                color = layer.populationTrend === 'Growing' ? '#10b981' : (layer.populationTrend === 'Shrinking' ? '#ef4444' : '#f59e0b');
+                if (layer.populationTrend === 'Growing') badge = `<i class="fas fa-arrow-trend-up text-emerald-600 text-[9px]"></i>`;
+                else if (layer.populationTrend === 'Shrinking') badge = `<i class="fas fa-arrow-trend-down text-red-600 text-[9px]"></i>`;
+            } else {
+                const inv = p.investmentLevel ?? 50;
+                color = inv > 60 ? '#10b981' : (inv < 40 ? '#ef4444' : '#f59e0b');
+            }
+            return `<button onclick="ui.showProvinceDetail('${p.name}')" title="${industry?.label || ''}" class="border-2 border-black font-bold ${sizeClass} bg-white hover:-translate-y-0.5 transition shadow-[2px_2px_0_#000] hover:shadow-[3px_3px_0_#000] flex items-center gap-1.5" style="border-left: 6px solid ${color}"><i class="fas ${industry?.icon || 'fa-industry'} text-stone-400 text-[10px]"></i>${p.name}${badge}</button>`;
         };
 
         const regionBlock = (name) => `
@@ -500,6 +553,13 @@ export const ui = {
             ? state.foreign.reduce((s, c) => s + c.relation * c.tradeWeight, 0) / state.foreign.reduce((s, c) => s + c.tradeWeight, 0)
             : null;
         const investLevel = p.investmentLevel ?? 50;
+        // Province Political Layer (Stage B3): the province as a source of information for a
+        // decision, not just a button to invest in -- who's actually ahead here right now, how
+        // contested it is, what's straining its own industry, and whether it's gaining or losing people.
+        const layer = engine.getProvincePoliticalLayer(p);
+        const LEANING_LABELS = { Government: ["รัฐบาลนำ", "text-blue-700"], Opposition: ["ฝ่ายค้านนำ", "text-red-700"], Neutral: ["สูสี", "text-stone-700"] };
+        const COMPETITIVE_LABELS = { Battleground: ["สมรภูมิ", "text-red-700"], Leaning: ["เอียงข้างชัดเจน", "text-amber-700"], Safe: ["มั่นคง", "text-emerald-700"] };
+        const TREND_LABELS = { Growing: ["ประชากรเพิ่มขึ้น", "text-emerald-700", "fa-arrow-trend-up"], Shrinking: ["ประชากรลดลง", "text-red-700", "fa-arrow-trend-down"], Stable: ["ประชากรคงที่", "text-stone-700", "fa-minus"] };
         const cont = document.getElementById('province-detail'); if (!cont) return;
         cont.innerHTML = `
             <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-1">ภาค${p.region}</div>
@@ -512,6 +572,14 @@ export const ui = {
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${industry?.icon || 'fa-industry'} mr-1"></i>อุตสาหกรรมหลัก</span><span class="font-bold">${industry?.label || p.industry}</span></div>
                 ${tradePartner ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${tradePartner.icon} mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">${tradePartner.name} (${tradePartner.relation.toFixed(0)}%)</span></div>` : ''}
                 ${isLogistics ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas fa-earth-asia mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">ทุกประเทศเฉลี่ย (${avgTradeRelation.toFixed(0)}%)</span></div>` : ''}
+            </div>
+            <div class="mt-4 pt-3 border-t-2 border-black">
+                <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2">สนามเลือกตั้ง (ถ้าเลือกตั้งวันนี้)</div>
+                <div class="flex justify-between text-xs border-b border-stone-200 pb-1 mb-1"><span>รัฐบาล ${layer.govSupport.toFixed(0)}% &middot; ฝ่ายค้าน ${layer.oppSupport.toFixed(0)}%</span><span class="font-bold ${LEANING_LABELS[layer.leaning][1]}">${LEANING_LABELS[layer.leaning][0]}</span></div>
+                <div class="w-full h-2 bg-red-200 border border-black mb-2 flex overflow-hidden"><div class="h-full bg-blue-500" style="width:${layer.govSupport}%"></div></div>
+                <div class="flex justify-between text-xs border-b border-stone-200 pb-1"><span>ความสูสี</span><span class="font-bold ${COMPETITIVE_LABELS[layer.competitiveness][1]}">${COMPETITIVE_LABELS[layer.competitiveness][0]}</span></div>
+                <div class="flex justify-between text-xs border-b border-stone-200 pb-1"><span><i class="fas ${TREND_LABELS[layer.populationTrend][2]} mr-1"></i>แนวโน้มประชากร</span><span class="font-bold ${TREND_LABELS[layer.populationTrend][1]}">${TREND_LABELS[layer.populationTrend][0]}</span></div>
+                ${layer.localIssue ? `<div class="flex justify-between text-xs pb-1"><span><i class="fas fa-triangle-exclamation mr-1"></i>ปัญหาเด่นในพื้นที่</span><span class="font-bold text-amber-700">${layer.localIssue}</span></div>` : ''}
             </div>
             ${state.player.party.status === "Government" ? `
             <div class="mt-4 pt-3 border-t-2 border-black">
@@ -722,7 +790,7 @@ export const ui = {
                 <div class="w-8 h-8 bg-stone-100 border border-stone-300 flex items-center justify-center text-stone-400"><i class="fas fa-user"></i></div>
                 <div class="min-w-0">
                     <div class="font-bold text-sm truncate text-black leading-tight">${l.name}</div>
-                    <div class="text-[9px] text-stone-500 truncate uppercase tracking-wider">${trait.socio?.name || '-'}</div>
+                    <div class="text-[9px] text-stone-500 truncate uppercase tracking-wider">${trait.socio?.name || '-'}${l.province ? ` &middot; ${l.province}` : ''}</div>
                 </div>
             </div>
 
@@ -772,11 +840,28 @@ export const ui = {
                     <h2 class="text-2xl font-black uppercase leading-none mb-1">${l.name}</h2>
                     <div class="text-xs font-bold bg-black text-white px-2 py-0.5 mb-4">${l.party.name}</div>
                     <div class="w-full text-left space-y-2 border-t-2 border-black pt-4">
+                        ${l.province ? `<div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>เขตเลือกตั้ง</span><span class="font-bold">${l.province}</span></div>` : ''}
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Status</span><span class="font-bold">${l.status}</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Wealth</span><span class="font-bold font-mono">฿${(l.cash/1e6).toFixed(1)}M</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>ชื่อเสียง (Prestige)</span><span class="font-bold ${l.prestige > 60 ? 'text-amber-700' : 'text-stone-700'}">${l.prestige}%</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>ความทะเยอทะยาน (Ambition)</span><span class="font-bold ${(l.ambition ?? 50) > 60 ? 'text-purple-700' : 'text-stone-700'}">${l.ambition ?? 50}%</span></div>
-                        ${(() => { const risk = engine.getMPElectoralRisk(l); const RISK_LABELS = { AtRisk: ["เสี่ยงแพ้เขต", "text-red-700"], Competitive: ["แข่งขันสูง", "text-amber-700"], Safe: ["ที่นั่งมั่นคง", "text-emerald-700"] }; return `<div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>สถานะการเลือกตั้ง</span><span class="font-bold ${RISK_LABELS[risk][1]}">${RISK_LABELS[risk][0]}</span></div>`; })()}
+                        ${(() => {
+                            const risk = engine.getMPElectoralRisk(l);
+                            const RISK_LABELS = { AtRisk: ["เสี่ยงแพ้เขต", "text-red-700"], Competitive: ["แข่งขันสูง", "text-amber-700"], Safe: ["ที่นั่งมั่นคง", "text-emerald-700"] };
+                            const row = `<div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>สถานะการเลือกตั้ง</span><span class="font-bold ${RISK_LABELS[risk][1]}">${RISK_LABELS[risk][0]}</span></div>`;
+                            // Seat Security (Stage B2): a one-line reason straight from the same
+                            // inputs getMPElectoralRisk() itself reads, so an AtRisk/Competitive
+                            // badge doesn't just assert a claim -- the province and the local base's
+                            // mood are what actually decide it now, not the MP's own faction alone.
+                            if (risk === "Safe" || !l.province) return row;
+                            const prov = state.provinces.find(p => p.name === l.province);
+                            const baseApproval = state.factions.find(f => f.name === prov?.baseFaction)?.approval ?? 50;
+                            const reasons = [];
+                            if (baseApproval < 45) reasons.push(`ฐานเสียง${prov.baseFaction}ในพื้นที่ไม่พอใจ (${baseApproval.toFixed(0)}%)`);
+                            if (l.party.status === "Government" && (prov.investmentLevel ?? 50) < 45) reasons.push(`จังหวัดลงทุนต่ำ (${(prov.investmentLevel ?? 50).toFixed(0)}%)`);
+                            const note = reasons.length > 0 ? `<div class="text-[9px] text-stone-500 -mt-1 mb-1">${reasons.join(' · ')}</div>` : '';
+                            return row + note;
+                        })()}
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Loyalty</span><span class="font-bold ${l.loyalty > 50 ? 'text-green-700':'text-red-700'}">${l.loyalty.toFixed(0)}%</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Conviction</span><span class="font-bold ${l.conviction > 85 ? 'text-red-700':'text-stone-700'}">${l.conviction}%${l.conviction > 85 ? ' (ย้ายพรรคไม่ได้)' : ''}</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Trust (ท่าน)</span><span class="font-bold ${l.trust > 60 ? 'text-green-700' : (l.trust < 35 ? 'text-red-700' : 'text-stone-700')}">${l.trust.toFixed(0)}%${l.switchCooldown > 0 ? ` (จำเรื่องเดิมอีก ${Math.ceil(l.switchCooldown)} วัน)` : ''}</span></div>
