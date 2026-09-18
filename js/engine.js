@@ -284,8 +284,6 @@ function getCoalitionCollapseBreakdown() {
     };
 }
 function getEconomicCrisisBreakdown() {
-    const fiscal = getNationalContext().fiscalCondition;
-    const fiscalStrain = fiscal === "Debt Stress" ? 30 : fiscal === "Tight" ? 15 : 0;
     // The growth term's coefficient was originally 8 (borrowed from growth's own productionBias
     // scale) -- calm-baseline testing caught a real feedback spiral it created: an Economic
     // crisis sets growthPenalty (up to 15), which drags growth down once the month rolls over,
@@ -293,10 +291,15 @@ function getEconomicCrisisBreakdown() {
     // crisis before growthPenalty had time to decay. Cut to 1.5 (an ~80% reduction, the same
     // scale of cut the Phase 5 employment-feedback fix needed for the same reason) so a crisis's
     // own aftermath doesn't relaunch the pressure that caused it.
+    // Fiscal Emergency (Balance Pass v1): the old fiscalStrain term here only read the recent
+    // TREND tag (rising/falling), so an empty-but-flat treasury contributed 0. Reads the absolute
+    // depletion stat (state.world.fiscalStress, itself driven by getBudgetCoverage()) instead, at
+    // a modest 0.3 coefficient -- fiscalStress already updates on its own slow target-and-drift
+    // clock in tick(), so this just carries that signal into the crisis total, not a second copy.
     return {
         "เศรษฐกิจหดตัว": Math.max(0, -state.world.growth * 1.5),
         "การว่างงานสูง": Math.max(0, (state.world.unemployment - 20) * 1.2),
-        "สถานะการคลังตึงตัว": fiscalStrain
+        "ภาวะการคลังตึงตัว": (state.world.fiscalStress ?? 0) * 0.3
     };
 }
 function getCoupBreakdown() {
@@ -307,6 +310,22 @@ function getCoupBreakdown() {
         "กองทัพไม่พอใจ": Math.max(0, (50 - armyApproval) * 0.6),
         "เสถียรภาพคณะรัฐมนตรีต่ำ": Math.max(0, (40 - state.world.cabinetStability) * 0.5),
         "แรงกดดันประท้วงสูง": Math.max(0, (state.world.protestPressure - 50) * 0.3)
+    };
+}
+// Fiscal Emergency (Balance Pass v1): the opening treasury size -- what "fully funded" is measured
+// against. getNationalContext().fiscalCondition already reads whether the budget is currently
+// rising or falling (a TREND), which meant a treasury sitting at literal zero but no longer moving
+// read as perfectly healthy. budgetCoverage below reads the absolute DEPLETION level instead, the
+// signal that trend was missing.
+const REFERENCE_BUDGET = 3.4e12;
+function getBudgetCoverage() {
+    return Math.max(0, Math.min(100, (state.world.nationalBudget / REFERENCE_BUDGET) * 100));
+}
+function getFiscalStressBreakdown() {
+    const coverage = getBudgetCoverage();
+    return {
+        "งบประเทศเหลือน้อย": Math.max(0, (60 - coverage) * 1.2),
+        "แนวโน้มขาดดุลต่อเนื่อง": getNationalContext().fiscalCondition === "Debt Stress" ? 20 : 0
     };
 }
 // Economic Pressure v1 (Stage D1): the same 5-term-breakdown-per-stat convention getCoupBreakdown()
@@ -528,8 +547,15 @@ function getImplementationEffectiveness(p) {
     const fiscal = getNationalContext().fiscalCondition;
     const budgetMultiplier = fiscal === "Debt Stress" ? 0.5 : fiscal === "Tight" ? 0.75 : 1;
 
-    const effectiveness = Math.max(0.2, capacityMultiplier * fitMultiplier * budgetMultiplier);
-    return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload };
+    // Fiscal Emergency (Balance Pass v1): budgetMultiplier above only reads the recent TREND (is
+    // the treasury rising or falling right now), so a budget that's already near empty but holding
+    // flat read as fully funded. This second, separate multiplier reads the absolute depletion
+    // level (state.world.fiscalStress, see getBudgetCoverage()) -- a government genuinely out of
+    // money can't staff and fund new policy at full strength even in a quiet, trend-flat month.
+    const fiscalStressMultiplier = Math.max(0.4, 1 - (state.world.fiscalStress ?? 0) / 100 * 0.5);
+
+    const effectiveness = Math.max(0.2, capacityMultiplier * fitMultiplier * budgetMultiplier * fiscalStressMultiplier);
+    return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, fiscalStressMultiplier, workload };
 }
 // Better Why System (Stage D4): "ทำไม policy effectiveness ต่ำ" -- getImplementationEffectiveness()
 // above already computes the real three multipliers, but only fitLabel (one of the three) ever
@@ -543,11 +569,27 @@ function getEffectivenessBreakdown(pOrName) {
     // to look a template up by name has to do it in here, where Data is a normal module import.
     const p = typeof pOrName === 'string' ? Data.POLICY_TEMPLATES.find(t => t.name === pOrName) : pOrName;
     if (!p) return {};
-    const { capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload } = getImplementationEffectiveness(p);
+    const { capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, fiscalStressMultiplier, workload } = getImplementationEffectiveness(p);
     return {
         [`ภาระงานกระทรวง (${workload.toFixed(0)}%)`]: (capacityMultiplier - 1) * 100,
         [fitLabel]: (fitMultiplier - 1) * 100,
-        "สถานะการคลังของประเทศ": (budgetMultiplier - 1) * 100
+        "แนวโน้มงบประมาณช่วงนี้": (budgetMultiplier - 1) * 100,
+        [`ภาวะฉุกเฉินทางการคลัง (งบเหลือ ${(state.world.budgetCoverage ?? 100).toFixed(0)}%)`]: (fiscalStressMultiplier - 1) * 100
+    };
+}
+
+// Legacy Trust v2 (Balance Pass v1): "ทำไม Legacy Trust ขึ้น/ลง" -- each sub-dimension's own
+// deviation from its 60 baseline, the same additive-deviation display convention
+// getEffectivenessBreakdown() above uses. Accepts either the party object or its name, same
+// object-or-name flexibility as every other why-button (onclick handlers run in global scope).
+function getLegacyBreakdown(partyOrName) {
+    const party = typeof partyOrName === 'string' ? state.parties.find(x => x.name === partyOrName) : partyOrName;
+    if (!party || !party.legacy) return {};
+    return {
+        "ความซื่อตรง/โปร่งใส (Integrity)": party.legacy.integrity - 60,
+        "การส่งมอบนโยบาย (Delivery)": party.legacy.delivery - 60,
+        "เสถียรภาพการปกครอง (Governance)": party.legacy.governance - 60,
+        "ความสม่ำเสมอของจุดยืน (Consistency)": party.legacy.consistency - 60
     };
 }
 
@@ -830,42 +872,48 @@ export const gameClock = {
         // Protest Pressure (Phase 1): a visible, structural buildup -- unemployment, crime, low
         // approval and low transparency all feed it -- instead of a blind dice roll, so the
         // player can see unrest coming before it erupts (randomness then only decides *when*).
-        const targetPressure = Math.max(0, Math.min(100,
-            (state.world.unemployment - 15) * 1.5 +
-            (state.world.crime - 30) * 1.0 +
-            (50 - state.world.approval) * 1.2 +
-            (100 - state.world.transparency) * 0.3
-        ));
+        // Balance Pass v1: this block used to re-derive each formula inline instead of calling the
+        // getXBreakdown() functions the why-buttons already read, which is exactly the "shared pure
+        // function" split the project keeps having to fix after the two copies drift apart. Calling
+        // the real breakdown functions here removes that risk going forward.
+        const targetPressure = Math.max(0, Math.min(100, Object.values(getPressureBreakdown()).reduce((s, v) => s + v, 0)));
         state.world.protestPressure = Math.max(0, Math.min(100, state.world.protestPressure + (targetPressure - state.world.protestPressure) * 0.05 * state.speed));
 
         // Event Pressure Framework (Stage C1): the same structural-buildup treatment for the
         // three other trigger checks below, which used to be a flat or hard-gated random roll.
-        const coalitionParties = state.parties.filter(p => p.status === "Government" && p.id !== state.player.party.id);
-        const avgCoalitionTrust = coalitionParties.length > 0 ? coalitionParties.reduce((s, p) => s + (p.trust ?? 70), 0) / coalitionParties.length : 100;
-        const targetCollapsePressure = Math.max(0, Math.min(100,
-            (70 - avgCoalitionTrust) * 1.2 +
-            (50 - state.world.cabinetStability) * 0.8 +
-            (40 - state.world.approval) * 0.6
-        ));
+        const targetCollapsePressure = Math.max(0, Math.min(100, Object.values(getCoalitionCollapseBreakdown()).reduce((s, v) => s + v, 0)));
         state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, state.world.coalitionCollapsePressure + (targetCollapsePressure - state.world.coalitionCollapsePressure) * 0.05 * state.speed));
 
-        const fiscal = getNationalContext().fiscalCondition;
-        const fiscalStrain = fiscal === "Debt Stress" ? 30 : fiscal === "Tight" ? 15 : 0;
-        const targetEconomicPressure = Math.max(0, Math.min(100,
-            Math.max(0, -state.world.growth) * 1.5 +
-            (state.world.unemployment - 20) * 1.2 +
-            fiscalStrain
-        ));
+        // Fiscal Emergency (Balance Pass v1): computed before economicCrisisPressure below so that
+        // term can read this tick's fresh fiscalStress value instead of lagging a full tick behind.
+        // budgetCoverage itself is a plain ratio (not drifted) since it should always reflect the
+        // treasury's real, current state -- only fiscalStress (built from it) drifts slowly, same
+        // as every other pressure stat.
+        state.world.budgetCoverage = getBudgetCoverage();
+        const targetFiscalStress = Math.max(0, Math.min(100, Object.values(getFiscalStressBreakdown()).reduce((s, v) => s + v, 0)));
+        state.world.fiscalStress = Math.max(0, Math.min(100, (state.world.fiscalStress ?? 0) + (targetFiscalStress - (state.world.fiscalStress ?? 0)) * 0.05 * state.speed));
+        const wasFiscalEmergency = !!state.world.fiscalEmergency;
+        // Hysteresis (enter at 70, only clear below 50): without a gap, a budget hovering right at
+        // one threshold would flip the status -- and re-fire the news item -- every few ticks.
+        state.world.fiscalEmergency = wasFiscalEmergency ? state.world.fiscalStress > 50 : state.world.fiscalStress > 70;
+        // Latch flags (not a history lookup, which only updates monthly while tick() runs daily):
+        // each one-shot news item fires once on the way up past its threshold and re-arms once
+        // stress drops back below it, the same hysteresis shape as fiscalEmergency itself.
+        if (state.world.fiscalEmergency && !wasFiscalEmergency) {
+            engine.addNews("ภาวะฉุกเฉินทางการคลัง!", `งบประเทศเหลือเพียง ${state.world.budgetCoverage.toFixed(0)}% ของระดับปกติ ประสิทธิผลนโยบายและความเชื่อมั่นจะลดลงจนกว่าฐานะการคลังจะฟื้น`);
+        } else if (!state.world.fiscalEmergency && wasFiscalEmergency) {
+            engine.addNews("พ้นภาวะฉุกเฉินทางการคลัง", "ฐานะการคลังฟื้นตัวกลับสู่ระดับที่รับมือได้แล้ว");
+        } else if (!state.world.fiscalEmergency && state.world.fiscalStress > 50 && !state.world.fiscalWatchWarned) {
+            state.world.fiscalWatchWarned = true;
+            engine.addNews("เตือนภัยการคลัง", `งบประเทศเริ่มตึงตัว (เหลือ ${state.world.budgetCoverage.toFixed(0)}%) หากปล่อยต่อเนื่องอาจเข้าสู่ภาวะฉุกเฉิน`);
+        } else if (state.world.fiscalStress <= 50) {
+            state.world.fiscalWatchWarned = false;
+        }
+
+        const targetEconomicPressure = Math.max(0, Math.min(100, Object.values(getEconomicCrisisBreakdown()).reduce((s, v) => s + v, 0)));
         state.world.economicCrisisPressure = Math.max(0, Math.min(100, state.world.economicCrisisPressure + (targetEconomicPressure - state.world.economicCrisisPressure) * 0.05 * state.speed));
 
-        const army = state.factions.find(f => f.name === "กองทัพ");
-        const armyApproval = army ? army.approval : 50;
-        const targetCoupPressure = Math.max(0, Math.min(100,
-            (40 - state.world.transparency) * 0.8 +
-            (50 - armyApproval) * 0.6 +
-            (40 - state.world.cabinetStability) * 0.5 +
-            (state.world.protestPressure - 50) * 0.3
-        ));
+        const targetCoupPressure = Math.max(0, Math.min(100, Object.values(getCoupBreakdown()).reduce((s, v) => s + v, 0)));
         state.world.coupPressure = Math.max(0, Math.min(100, state.world.coupPressure + (targetCoupPressure - state.world.coupPressure) * 0.05 * state.speed));
 
         if(crossedDayOfMonth(prevDate, state.date, 15)) {
@@ -996,7 +1044,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getFactionApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvinceVoteShare, getProvinceVoteShareBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier, getEffectivenessBreakdown,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getFactionApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvinceVoteShare, getProvinceVoteShareBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier, getEffectivenessBreakdown, getLegacyBreakdown, getFiscalStressBreakdown, getBudgetCoverage,
 
     init() {
         state.voteModifier = null;
@@ -1053,6 +1101,12 @@ export const engine = {
         // Event Pressure Framework (Stage C1): same day-one treatment for the other three
         // pressures -- computed from the real formula instead of the flat 0 placeholder.
         state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, Object.values(getCoalitionCollapseBreakdown()).reduce((s, v) => s + v, 0)));
+        // Fiscal Emergency (Balance Pass v1): computed before economicCrisisPressure below, same
+        // ordering as tick(), since that breakdown now reads fiscalStress.
+        state.world.budgetCoverage = getBudgetCoverage();
+        state.world.fiscalStress = Math.max(0, Math.min(100, Object.values(getFiscalStressBreakdown()).reduce((s, v) => s + v, 0)));
+        state.world.fiscalEmergency = state.world.fiscalStress > 70;
+        state.world.fiscalWatchWarned = state.world.fiscalStress > 50;
         state.world.economicCrisisPressure = Math.max(0, Math.min(100, Object.values(getEconomicCrisisBreakdown()).reduce((s, v) => s + v, 0)));
         state.world.coupPressure = Math.max(0, Math.min(100, Object.values(getCoupBreakdown()).reduce((s, v) => s + v, 0)));
         // Economic Pressure v1 (Stage D1): same day-one treatment -- real production/trade/
@@ -1065,7 +1119,7 @@ export const engine = {
         // A real baseline for every trend arrow and why-breakdown from the very first render,
         // instead of an empty history that would only start showing a trend a month in.
         for(let i=0; i<6; i++) { state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget); }
-        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure"].forEach(key => {
+        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure", "fiscalStress"].forEach(key => {
             state.history[key] = [];
             for (let i = 0; i < 6; i++) state.history[key].push(state.world[key]);
         });
@@ -1210,7 +1264,11 @@ export const engine = {
                 // (grudges/goodwill fade). legacyTrust barely moves month to month -- see
                 // recordLegacyEvent()'s drift comment -- so it can actually hold a multi-term
                 // reputation instead of resetting every time trust does.
-                legacyTrust: 60, legacyHistory: []
+                legacyTrust: 60, legacyHistory: [],
+                // Legacy Trust v2 (Balance Pass v1): the four sub-scores legacyTrust above is now
+                // a weighted blend of -- see recomputeLegacyTrust()/getLegacyBreakdown().
+                legacy: { integrity: 60, delivery: 60, governance: 60, consistency: 60 },
+                legacyTermCounts: {}, legacyBillFailures: {}
             });
         }
         let rSeats = Data.TOTAL_SEATS;
@@ -1273,12 +1331,57 @@ export const engine = {
     // through, so the log and the number can't drift apart. Capped at 20 like addNews() caps
     // nothing but everything else with a rolling list in this game caps somewhere -- long enough
     // to browse a party's real record, short enough not to grow forever over a 60-year game.
-    recordLegacyEvent(party, delta, label) {
+    // Legacy Trust v2 (Balance Pass v1): simulation testing found Reformist and Austerity -- both
+    // just proposing legislation often -- driving legacyTrust from 60 to under 1 within a couple
+    // of years, purely from event VOLUME, while Passive (proposing nothing) actually finished
+    // higher than it started. A flat -8 per failed bill with no severity distinction and no
+    // diminishing return on repeats was punishing activity itself, not bad governance.
+    // dimension: one of 'integrity' | 'delivery' | 'governance' | 'consistency' -- the four
+    // sub-scores legacyTrust is now a weighted blend of (see recomputeLegacyTrust()).
+    // tier: severity, per the doc's own ordering (กฎหมายเล็กตก < นโยบายเรือธงตก < ผิดสัญญาหลัก <
+    // วิกฤตความเชื่อมั่น) -- scales the raw delta so a minor bill failing barely registers next to
+    // losing a confidence vote.
+    recordLegacyEvent(party, delta, label, dimension = 'delivery', tier = 'minor') {
         if (!party) return;
-        party.legacyTrust = Math.max(0, Math.min(100, (party.legacyTrust ?? 60) + delta));
+        if (!party.legacy) {
+            const seed = party.legacyTrust ?? 60;
+            party.legacy = { integrity: seed, delivery: seed, governance: seed, consistency: seed };
+        }
+        if (!party.legacyTermCounts) party.legacyTermCounts = {};
+
+        const TIER_WEIGHT = { minor: 0.5, flagship: 1.0, brokenPromise: 1.6, confidenceCrisis: 2.2 };
+        const weight = TIER_WEIGHT[tier] ?? 1;
+
+        // Diminishing repeat penalty: the SAME kind of bad news happening over and over within one
+        // parliamentary term reads less like fresh information each time -- capped at a quarter
+        // strength, not floored to zero, so repeats still cost something. Counter resets on the
+        // next election (runElection()), so a new term starts with a clean slate.
+        let repeatFactor = 1;
+        if (delta < 0) {
+            const key = `${dimension}:${tier}`;
+            const count = party.legacyTermCounts[key] || 0;
+            repeatFactor = Math.max(0.25, 1 - count * 0.15);
+            party.legacyTermCounts[key] = count + 1;
+        }
+
+        const scaledDelta = delta * weight * repeatFactor;
+        party.legacy[dimension] = Math.max(0, Math.min(100, party.legacy[dimension] + scaledDelta));
+        this.recomputeLegacyTrust(party);
+
         party.legacyHistory = party.legacyHistory || [];
-        party.legacyHistory.unshift({ date: state.date.toLocaleDateString('th-TH'), label, delta });
+        party.legacyHistory.unshift({ date: state.date.toLocaleDateString('th-TH'), label, delta: +scaledDelta.toFixed(1), dimension, tier });
         if (party.legacyHistory.length > 20) party.legacyHistory.length = 20;
+    },
+
+    // The single overall number every existing call site (getFactionResponseMultiplier,
+    // runProvinceElection, negotiateAlliance, the Parliament table) already reads -- kept as a
+    // plain weighted average so none of those needed to change, only how it's built underneath.
+    // Governance and Integrity carry slightly more weight: a government's basic competence and
+    // honesty matter more to its lasting reputation than any single bill's fate.
+    recomputeLegacyTrust(party) {
+        if (!party.legacy) return;
+        const l = party.legacy;
+        party.legacyTrust = Math.max(0, Math.min(100, l.integrity * 0.3 + l.delivery * 0.25 + l.governance * 0.25 + l.consistency * 0.2));
     },
 
     // Spreads a policy's impact on a faction over `days` instead of an instant jolt,
@@ -1336,9 +1439,35 @@ export const engine = {
         const weightedRelation = state.foreign.reduce((s, c) => s + (c.relation - 50) * c.tradeWeight, 0) / totalTradeWeight;
         const tradeBonus = weightedRelation * 0.000015;
 
-        const taxRevenue = state.world.nationalBudget * Math.max(0.0002, 0.0012 + state.world.growth * 0.0004 + tradeBonus);
+        // Fiscal Emergency (Balance Pass v1): revenue used to scale purely off the CURRENT
+        // treasury, so a budget that reached zero collected zero tax forever -- a one-way trap
+        // with no counter-force, unlike every other stat in the game. Splitting it into a
+        // structural half (the underlying economy, tracked off REFERENCE_BUDGET so it doesn't
+        // care how much cash the government currently has on hand) and a treasury-proportional
+        // half (the original behavior, halved) keeps a healthy budget's income the same as before
+        // while giving a depleted one a real, if slow, way back.
+        const revenueRate = Math.max(0.0002, 0.0012 + state.world.growth * 0.0004 + tradeBonus);
+        const structuralRevenue = REFERENCE_BUDGET * revenueRate * 0.5;
+        const treasuryRevenue = state.world.nationalBudget * revenueRate * 0.5;
+        const taxRevenue = structuralRevenue + treasuryRevenue;
         state.world.nationalBudget += taxRevenue;
         this.addNews("รายได้ภาษีประจำเดือน", `รัฐเก็บภาษีได้ ฿${(taxRevenue/1e9).toFixed(1)}B จากภาวะเศรษฐกิจที่เติบโต ${state.world.growth.toFixed(1)}% และการค้าระหว่างประเทศ`);
+
+        // Fiscal Emergency (Balance Pass v1): running the state costs something even in a month
+        // with no new legislation at all -- a small fixed maintenance burden, so a depleted
+        // treasury doesn't just sit inert as an untouched resource bar. Modest next to a healthy
+        // 3.4T budget, but real once the treasury is already thin.
+        // Testing a forced-zero-budget scenario found the structural revenue floor above stops
+        // the literal forever-zero trap, but a treasury already in fiscalEmergency has no real
+        // way OUT: ongoing crisis activity (itself partly fed by fiscalStress feeding into
+        // economicCrisisPressure) drains it about as fast as structural revenue refills it, so it
+        // just oscillates near zero indefinitely -- exactly the "runaway that doesn't recover
+        // without reason" the spec calls out. A government that recognizes it's in an emergency
+        // cuts its own routine spending, same as any real austerity response -- so the fixed
+        // burden shrinks sharply while fiscalEmergency holds, giving the structural floor enough
+        // room to actually pull the treasury back out instead of just treading water.
+        const fixedBurden = REFERENCE_BUDGET * (state.world.fiscalEmergency ? 0.00005 : 0.00035);
+        state.world.nationalBudget -= fixedBurden;
 
         // Population dynamics: each province's headcount drifts monthly instead of staying
         // frozen for the whole game. A slow national baseline tracks overall growth.
@@ -1408,7 +1537,24 @@ export const engine = {
         // (not a discrete recordLegacyEvent() entry; logging this every single month would flood
         // the 20-entry history cap with noise and crowd out the events actually worth browsing).
         state.parties.filter(p => p.status === "Government").forEach(gp => {
-            gp.legacyTrust = Math.max(0, Math.min(100, (gp.legacyTrust ?? 60) + legitimacyPressure * 2));
+            if (!gp.legacy) { const seed = gp.legacyTrust ?? 60; gp.legacy = { integrity: seed, delivery: seed, governance: seed, consistency: seed }; }
+            gp.legacy.governance = Math.max(0, Math.min(100, gp.legacy.governance + legitimacyPressure * 2));
+            // Legacy Trust v2 (Balance Pass v1): the doc's ask that transparency/corruption should
+            // matter to Legacy "in the long run, significantly" -- a slow pull toward a target set
+            // by CURRENT transparency, not an instant hit, so one bad month of backroom dealing
+            // doesn't equal years of clean governance, but sustained corruption still drags this
+            // down hard given enough time (this is what actually explains the Corrupt/Populist
+            // playtest runs' transparency collapsing to 0 well before either government fell).
+            const integrityTarget = 20 + (state.world.transparency ?? 100) * 0.7;
+            gp.legacy.integrity = gp.legacy.integrity + (integrityTarget - gp.legacy.integrity) * 0.08;
+            // Delivery and Consistency get a gentle pull back toward the 60 baseline instead of
+            // transparency/legitimacy driving them -- without this, the diminishing-repeat penalty
+            // above still leaves a bad stretch of failed bills permanently pinned near the floor
+            // even after the government stops failing them (exactly what Reformist/Austerity did
+            // in testing). A real event still moves these dimensions far more than this drift does.
+            gp.legacy.delivery = gp.legacy.delivery + (60 - gp.legacy.delivery) * 0.03;
+            gp.legacy.consistency = gp.legacy.consistency + (60 - gp.legacy.consistency) * 0.03;
+            this.recomputeLegacyTrust(gp);
         });
 
         // Long Campaign (Phase 7): the executive perks behind positionIncome only mean anything
@@ -1443,7 +1589,7 @@ export const engine = {
         // *before* their own recompute above, so their trend arrow was permanently a month stale.
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
         if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
-        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure"].forEach(key => {
+        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure", "fiscalStress"].forEach(key => {
             if (!state.history[key]) state.history[key] = [];
             state.history[key].push(state.world[key]);
             if (state.history[key].length > 6) state.history[key].shift();
@@ -1660,6 +1806,11 @@ export const engine = {
         const p = state.player.party;
         if(type === 'ideology') { p.ideologies.shift(); p.ideologies.push(newValue); } else { p.goals.shift(); p.goals.push(newValue); }
         this.addNews(`พรรค ${p.name} ปรับอุดมการณ์`, `ประกาศเปลี่ยนจุดยืนเป็น ${newValue}`);
+        // Legacy Trust v2 (Balance Pass v1): a deliberate stance flip is a real identity change
+        // whether the player chose it or the party was forced into one post-election -- same
+        // consistency hook applyElectionPunishment() uses, milder since this one is a single-field
+        // nudge, not a full ideology swap.
+        this.recordLegacyEvent(p, -5, `ปรับ${type === 'ideology' ? 'อุดมการณ์' : 'เป้าหมาย'}พรรคเป็น${newValue}`, 'consistency', 'minor');
         ui.updateMain();
     },
 
@@ -1948,6 +2099,11 @@ export const engine = {
         Object.values(Data.MINISTRIES).forEach(m => { m.currentMinister = null; }); // new term, new cabinet to appoint
         state.activePolicies = [];
         state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
+        // Legacy Trust v2 (Balance Pass v1): diminishing-repeat counters and per-bill failure
+        // tracking are scoped to a single parliamentary term -- a genuinely new election is a
+        // clean slate, unlike a mid-term no-confidence ouster (runNoConfidenceVote()), which keeps
+        // the same term's counters since it's still the same session.
+        state.parties.forEach(p => { p.legacyTermCounts = {}; p.legacyBillFailures = {}; });
         this.generateLeaders();
 
         const won = state.player.party.status === "Government";
@@ -2032,7 +2188,7 @@ export const engine = {
                 // Long-term Political Memory (Stage D3): flip-flopping is exactly the kind of
                 // thing that damages a multi-term reputation, beyond this term's seats/trust hit
                 // C4 already applies above.
-                this.recordLegacyEvent(party, -10, `เปลี่ยนอุดมการณ์จาก${dropped}สู่${added}`);
+                this.recordLegacyEvent(party, -10, `เปลี่ยนอุดมการณ์จาก${dropped}สู่${added}`, 'consistency', 'flagship');
             } else {
                 // Leadership change: a fresh leader resets standing with coalition partners and
                 // brings their own priority lean, same shared roll party creation uses.
@@ -2073,7 +2229,7 @@ export const engine = {
         // Long-term Political Memory (Stage D3): a no-confidence motion is the clearest crisis-
         // management test this game has -- surviving one is a real mark in a government's favor
         // that outlasts this term's trust/approval swings; losing one is the opposite.
-        this.recordLegacyEvent(state.player.party, ousted ? -12 : 5, ousted ? "แพ้มติไม่ไว้วางใจ" : "รอดมติไม่ไว้วางใจ");
+        this.recordLegacyEvent(state.player.party, ousted ? -12 : 5, ousted ? "แพ้มติไม่ไว้วางใจ" : "รอดมติไม่ไว้วางใจ", 'governance', 'confidenceCrisis');
         // Long Campaign (Phase 7): being ousted mid-term used to end the game (location.reload()).
         // Now the PM's own party is forced into Opposition -- seats don't change, so letting
         // assignGovernmentStatus() run on the full list would just hand government straight back
@@ -2231,6 +2387,11 @@ export const engine = {
         // both the broken-promise hook below and getFactionResponseMultiplier()'s legacyTrust
         // term can use it -- same resolution renderOppositionCommandCenter() (Stage C5) uses.
         const proposingParty = p.proposer === "รัฐบาล" ? state.player.party : (state.leaders.find(l => l.name === p.proposer)?.party || null);
+        // Legacy Trust v2 (Balance Pass v1): severity tier for whichever legacy event this vote's
+        // outcome triggers below -- a bill's own cost, relative to every other template, stands in
+        // for "flagship" since there's no separate significance field on POLICY_TEMPLATES to add.
+        const costRank = Data.POLICY_TEMPLATES.filter(t => t.cost <= p.cost).length / Data.POLICY_TEMPLATES.length;
+        const isFlagship = costRank >= 0.6;
         if (passed) {
             if (p.stage < 3) { p.stage++; p.isDeliberating = true; p.remainingDays = p.totalDays; }
             else {
@@ -2256,6 +2417,13 @@ export const engine = {
                 if (ministry) ministry.workload = Math.min(100, (ministry.workload || 0) + 30);
                 const effLabel = effectiveness > 0.85 ? "ดำเนินงานได้เต็มที่" : effectiveness > 0.6 ? "ดำเนินงานได้ปานกลาง" : "ดำเนินงานได้จำกัดมาก";
                 this.addNews(`${p.name} บังคับใช้เป็นกฎหมาย`, `${effLabel} (ประสิทธิผล ${(effectiveness*100).toFixed(0)}%) -- ${fitLabel}`);
+                // Legacy Trust v2 (Balance Pass v1): delivering a bill all the way to enactment was
+                // previously invisible to legacyTrust -- only failure ever touched it. A one-sided
+                // ledger is what let pure legislative volume (many attempts, inevitably some
+                // failures) drag the score down with nothing on the other side of the scale.
+                if (proposingParty && proposingParty.status === "Government") {
+                    this.recordLegacyEvent(proposingParty, isFlagship ? 6 : 2, `ร่าง "${p.name}" บังคับใช้เป็นกฎหมายสำเร็จ`, 'delivery', isFlagship ? 'flagship' : 'minor');
+                }
                 state.activePolicies = state.activePolicies.filter(x => x.name !== pName);
             }
         } else {
@@ -2263,8 +2431,17 @@ export const engine = {
             // it already spent political capital proposing (the news already announced it, the
             // stakeholder review already previewed it) is the closest thing this game's
             // mechanics have to a broken promise -- the party said it would do this and couldn't.
+            // Legacy Trust v2 (Balance Pass v1): a flat -8 regardless of what failed punished a
+            // minor bill exactly as hard as a flagship one. Now tiered by cost, and a SECOND
+            // failure of this exact template within the same term reads as a broken promise (the
+            // party re-committed to the same thing and couldn't deliver it twice), the next tier
+            // up in the doc's own severity ordering.
             if (proposingParty && proposingParty.status === "Government") {
-                this.recordLegacyEvent(proposingParty, -8, `ร่าง "${p.name}" ตกในสภา`);
+                proposingParty.legacyBillFailures = proposingParty.legacyBillFailures || {};
+                const priorFailures = proposingParty.legacyBillFailures[p.name] || 0;
+                const tier = priorFailures > 0 ? 'brokenPromise' : (isFlagship ? 'flagship' : 'minor');
+                proposingParty.legacyBillFailures[p.name] = priorFailures + 1;
+                this.recordLegacyEvent(proposingParty, -8, `ร่าง "${p.name}" ตกในสภา`, 'delivery', tier);
             }
             state.activePolicies = state.activePolicies.filter(x => x.name !== pName);
         }

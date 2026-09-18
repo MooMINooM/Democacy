@@ -60,6 +60,18 @@ export const ui = {
         // "why" breakdown, so the player sees direction before even opening it.
         const trends = { 'hud-approval-trend': 'approval', 'stat-cabinet-stability-trend': 'cabinetStability', 'stat-growth-trend': 'growth' };
         for (const [id, key] of Object.entries(trends)) { const el = document.getElementById(id); if (el) el.innerHTML = this.trendArrow(key); }
+
+        // Fiscal Emergency (Balance Pass v1): a warning before the crisis point, not just a status
+        // that appears once the government is already there -- amber once fiscalStress crosses the
+        // same 50 threshold the watch-level news fires at, red once fiscalEmergency itself is true.
+        const coverageEl = document.getElementById('hud-fiscal-coverage');
+        if (coverageEl) {
+            const coverage = (state.world.budgetCoverage ?? 100).toFixed(0);
+            const stress = state.world.fiscalStress ?? 0;
+            if (state.world.fiscalEmergency) { coverageEl.textContent = `⚠ ฉุกเฉิน (${coverage}%)`; coverageEl.className = "text-[9px] font-mono font-bold hover:underline text-red-700"; }
+            else if (stress > 50) { coverageEl.textContent = `เฝ้าระวัง (${coverage}%)`; coverageEl.className = "text-[9px] font-mono font-bold hover:underline text-amber-700"; }
+            else { coverageEl.textContent = `คุ้มครอง ${coverage}%`; coverageEl.className = "text-[9px] font-mono font-bold hover:underline text-stone-400"; }
+        }
     },
 
     // Explainability (Phase 2): compares the last two monthly snapshots (state.history.*, the
@@ -120,7 +132,10 @@ export const ui = {
         const p = state.parties.find(x => x.id === partyId); if (!p) return;
         document.getElementById('event-title').innerText = `ประวัติระยะยาว: ${p.name}`;
         const history = p.legacyHistory || [];
-        let h = `<div class="text-xs text-stone-500 mb-3">ชื่อเสียงระยะยาวปัจจุบัน: <span class="font-mono font-bold text-black">${(p.legacyTrust ?? 60).toFixed(0)}%</span></div><div class="space-y-2 max-h-[350px] overflow-y-auto scroll-custom">`;
+        // Legacy Trust v2 (Balance Pass v1): the overall % is now a blend of four sub-scores --
+        // this why-button opens the same breakdown getLegacyBreakdown() computes, one level up
+        // from the raw event log below.
+        let h = `<button onclick="ui.showWhy('Legacy Trust: ${p.name}', engine.getLegacyBreakdown('${p.name}'))" class="w-full text-left mb-3 pb-2 border-b-2 border-black hover:bg-stone-50 transition"><div class="flex justify-between items-center text-xs"><span class="text-stone-500">ชื่อเสียงระยะยาวปัจจุบัน <i class="fas fa-circle-question text-stone-300"></i></span><span class="font-mono font-bold text-black text-sm">${(p.legacyTrust ?? 60).toFixed(0)}%</span></div></button><div class="space-y-2 max-h-[350px] overflow-y-auto scroll-custom">`;
         if (history.length === 0) h += `<div class="italic text-stone-400 text-center">ยังไม่มีเหตุการณ์สำคัญบันทึกไว้</div>`;
         history.forEach(ev => {
             const color = ev.delta > 0 ? 'text-emerald-700' : (ev.delta < 0 ? 'text-red-700' : 'text-stone-400');
