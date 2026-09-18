@@ -1080,9 +1080,15 @@ export const ui = {
         const effColor = effectiveness > 0.85 ? 'text-emerald-700' : effectiveness > 0.6 ? 'text-amber-700' : 'text-red-700';
         h += `<div class="mb-3 pb-2 border-b-2 border-black"><div class="flex justify-between text-xs"><span class="font-bold uppercase tracking-widest text-stone-500">ประสิทธิผลคาดการณ์ (ถ้าผ่านตอนนี้)</span><span class="font-mono font-bold ${effColor}">${(effectiveness*100).toFixed(0)}%</span></div><div class="text-[10px] text-stone-500 mt-1">${fitLabel}</div></div>`;
         stakeholders.forEach(s => {
-            const impact = p.impact[s.name] || 0;
-            const color = impact > 0 ? 'text-green-700' : (impact < 0 ? 'text-red-700' : 'text-stone-400');
-            h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${color}">${impact > 0 ? '+' : ''}${impact}</span></div>`;
+            const raw = p.impact[s.name] || 0;
+            // Faction Response v2 (Stage D2): the preview now shows what this faction would
+            // actually feel right now (income, unemployment, cost of living, province neglect,
+            // legitimacy, and how many times this exact bill has already been passed before),
+            // not the flat template number -- the same math finalizeVote() uses, so the preview
+            // can't drift from the real outcome.
+            const projected = raw === 0 ? 0 : engine.getFactionResponseMultiplier(s.name, raw * effectiveness, p);
+            const color = projected > 0 ? 'text-green-700' : (projected < 0 ? 'text-red-700' : 'text-stone-400');
+            h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${color}">${projected > 0 ? '+' : ''}${projected.toFixed(1)}</span></div>`;
         });
         if (p.worldImpact) {
             h += `<div class="mt-2 pt-2 border-t-2 border-black text-[9px] uppercase tracking-widest text-stone-500 font-bold">ผลต่อสถิติประเทศ</div>`;

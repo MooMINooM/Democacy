@@ -480,6 +480,69 @@ function getImplementationEffectiveness(p) {
     return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload };
 }
 
+// Faction Response v2 (Stage D2): a faction used to feel a policy's impact.<factionName> exactly
+// as written on the template, every time, in every era -- getImplementationEffectiveness() above
+// already scales the LEGAL effect down by state capacity, but the raw number a faction actually
+// FEELS never adjusted for the faction's own real circumstances. Reads the 5 things the roadmap
+// names: income (f.wealth -- a poorer faction feels the same nominal move more), unemployment
+// (a faction with a real stake in jobs reacts harder during a genuine slump), cost of living
+// (reuses Stage D1's COST_OF_LIVING_SENSITIVITY -- an already-squeezed faction is more reactive),
+// province (a policy lands harder on a faction whose home provinces -- prov.baseFaction match --
+// are already neglected), and institutionalLegitimacy (a cynical public discounts good news and
+// believes bad news more readily). Policy memory is handled separately in finalizeVote() (the
+// same template's own persistent enactCount, incremented there) since it needs to mutate state
+// once per real enactment, not just read it. Together this is also what makes "the same policy in
+// different eras affects factions differently" (the roadmap's third ask) fall out for free: the
+// multiplier moves with real game state, not a fixed lookup, so the identical template.impact
+// value plays out differently depending on when in a given game's history it actually passes.
+function getFactionResponseBreakdown(factionName, template) {
+    const f = state.factions.find(x => x.name === factionName);
+    if (!f) return {};
+
+    const terms = {};
+    // Income: wealth 0 -> 1.33x, wealth 100 -> 0.67x, wealth 50 (neutral) -> 1x.
+    terms["รายได้ของกลุ่ม"] = (50 - f.wealth) / 150;
+    // Unemployment: only factions with a real material stake in jobs (below-median wealth) feel this.
+    if (f.wealth < 40) terms["ภาวะว่างงานสูง"] = Math.max(0, state.world.unemployment - 20) / 100;
+    // Cost of living (Stage D1 reuse): how far this faction's own weighted cost exposure sits from neutral.
+    const sensitivity = Data.COST_OF_LIVING_SENSITIVITY[factionName];
+    if (sensitivity) {
+        const entries = Object.entries(sensitivity);
+        const avgDeviation = entries.reduce((s, [cat, w]) => s + Math.abs((state.world.costOfLiving?.[cat] ?? 50) - 50) * Math.abs(w), 0) / entries.length;
+        terms["ค่าครองชีพของกลุ่มนี้"] = avgDeviation / 80;
+    }
+    // Province: this faction's home provinces (baseFaction match), how neglected they already are.
+    const homeProvinces = state.provinces.filter(p => p.baseFaction === factionName);
+    if (homeProvinces.length > 0) {
+        const avgInvestment = homeProvinces.reduce((s, p) => s + (p.investmentLevel ?? 50), 0) / homeProvinces.length;
+        terms["จังหวัดฐานเสียงถูกทอดทิ้ง"] = Math.max(0, 50 - avgInvestment) / 150;
+    }
+    return terms;
+}
+function getFactionResponseMultiplier(factionName, rawValue, template) {
+    const terms = getFactionResponseBreakdown(factionName, template);
+    let mult = Math.max(0.4, Math.min(2.2, 1 + Object.values(terms).reduce((s, v) => s + v, 0)));
+    let adjusted = rawValue * mult;
+
+    // Legitimacy: below institutionalLegitimacy's own long-run comfortable range (Phase 1 treats
+    // 60+ as healthy), a cynical public discounts a policy's good news and believes its bad news
+    // more readily -- the same directional skew real approval-rating research finds.
+    const legitimacyGap = Math.max(0, 60 - (state.world.institutionalLegitimacy ?? 70));
+    if (legitimacyGap > 0) {
+        adjusted *= adjusted > 0 ? Math.max(0.4, 1 - legitimacyGap / 100) : 1 + legitimacyGap / 150;
+    }
+
+    // Policy memory: the same template enacted before (template.enactCount, incremented once per
+    // real enactment in finalizeVote()) lands softer each repeat -- voters get less moved by a
+    // promise that's already been made, especially one that evidently hasn't solved the problem
+    // it targets or they wouldn't be hearing it again. Same shape as every other saturation
+    // mechanic already in the game (campaignSaturation, lobbySaturation, oppStanceSaturation).
+    const enactCount = template?.enactCount || 0;
+    if (enactCount > 0) adjusted *= Math.max(0.35, 1 - enactCount * 0.2);
+
+    return adjusted;
+}
+
 // AI Government Behavior v2 (Stage C3): aiPropose() used to grab a fully random MP and a fully
 // random policy template -- no reading of ideology, which faction is hurting, which national
 // stat is worst, coalition demand, or how close the next election is, exactly the gap the
@@ -894,7 +957,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier,
 
     init() {
         state.voteModifier = null;
@@ -2080,7 +2143,13 @@ export const engine = {
                 // much of the legal effect the state can actually deliver.
                 const { effectiveness, fitLabel } = getImplementationEffectiveness(p);
                 state.world.nationalBudget -= p.cost;
-                Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, v * effectiveness, p.name));
+                // Faction Response v2 (Stage D2): the template's own persistent record (not this
+                // activePolicy instance, which is a fresh spread copy every proposal) of how many
+                // times it's actually been enacted -- read and incremented here so
+                // getFactionResponseMultiplier()'s policy-memory term has something real to read.
+                const template = Data.POLICY_TEMPLATES.find(t => t.name === p.name);
+                Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, getFactionResponseMultiplier(fn, v * effectiveness, template), p.name));
+                if (template) template.enactCount = (template.enactCount || 0) + 1;
                 if (p.worldImpact) Object.entries(p.worldImpact).forEach(([stat, v]) => this.applyWorldStatImpact(stat, v * effectiveness, p.name));
                 state.foreign.forEach(c => {
                     if (c.ideology === p.ideology) this.applyForeignImpact(c.id, 8 * effectiveness, p.name, 60);
