@@ -1532,6 +1532,17 @@ export const engine = {
         const fixedBurden = REFERENCE_BUDGET * (state.world.fiscalEmergency ? 0.00005 : 0.00035);
         state.world.nationalBudget -= fixedBurden;
 
+        // Long-run Economic Drift (Balance Pass v1 Phase 3): an 80-year, zero-player-action Monte
+        // Carlo test found nationalBudget on a genuine one-way structural decline -- consistently
+        // negative slope across every seed (unlike growth/unemployment/cost-of-living, whose
+        // slopes straddle zero, consistent with noise around a stable level, not real drift) --
+        // from AI's own ongoing policy enactments outpacing the revenue/burden balance above, with
+        // nothing pulling it back. Every OTHER float stat in this game has a baseline-reversion
+        // term; nationalBudget was the one exception. A gentle pull toward 60% of the opening
+        // treasury, not the full 100% -- some long-run fiscal erosion from real governing is
+        // expected, just not an unbounded bleed toward zero regardless of anyone's choices.
+        state.world.nationalBudget += (REFERENCE_BUDGET * 0.6 - state.world.nationalBudget) * 0.003;
+
         // Population dynamics: each province's headcount drifts monthly instead of staying
         // frozen for the whole game. A slow national baseline tracks overall growth.
         // Migration (Phase 6): the investment-driven pull is now measured against each
