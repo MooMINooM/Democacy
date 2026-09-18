@@ -52,7 +52,10 @@ const setup = {
             // Initialize Engine and UI
             engine.init();
             ui.updateMain();
-            ui.tab('map'); // land on the province map first
+            // Dashboard First (Stage A): the player reads the country's situation (news,
+            // context, pressure, economy, society) before doing anything, instead of landing on
+            // the province map with nothing to explain what they're looking at yet.
+            ui.tab('dashboard');
             gameClock.setSpeed(0); // Start paused so the player can read the situation first
             return;
         }

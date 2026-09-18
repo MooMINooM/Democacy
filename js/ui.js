@@ -138,19 +138,28 @@ export const ui = {
         if (!contextCont || !pressureCont) return;
         const ctx = engine.getNationalContext();
         const ECONOMIC_LABELS = { Boom: ["เฟื่องฟู", "text-emerald-700"], Expansion: ["ขยายตัว", "text-emerald-700"], Slowdown: ["ชะลอตัว", "text-amber-700"], Recession: ["ถดถอย", "text-red-700"] };
-        const POLITICAL_LABELS = { Crisis: ["วิกฤต", "text-red-700"], "Election Mode": ["ใกล้เลือกตั้ง", "text-amber-700"], Polarized: ["แตกขั้ว", "text-amber-700"], Stable: ["มั่นคง", "text-emerald-700"] };
+        // Political Climate v2 (Stage A): replaces the old 4-state Crisis/Election Mode/Polarized/
+        // Stable set (which read a plain 50% approval as automatically "Polarized") with a 5-state
+        // multi-factor read -- see engine.js's getPoliticalClimate().
+        const POLITICAL_LABELS = { Crisis: ["วิกฤต", "text-red-700"], Polarized: ["แตกขั้ว", "text-red-700"], Tense: ["ตึงเครียด", "text-amber-700"], Competitive: ["แข่งขันปกติ", "text-stone-700"], Calm: ["สงบ", "text-emerald-700"] };
         const FISCAL_LABELS = { "Debt Stress": ["งบตึงมาก", "text-red-700"], Tight: ["งบตึง", "text-amber-700"], Normal: ["ปกติ", "text-stone-700"], Surplus: ["เกินดุล", "text-emerald-700"] };
         const tiles = [
             { icon: "fa-chart-line", label: "วัฏจักรเศรษฐกิจ", val: ECONOMIC_LABELS[ctx.economicCycle] },
-            { icon: "fa-landmark", label: "บรรยากาศการเมือง", val: POLITICAL_LABELS[ctx.politicalClimate] },
             { icon: "fa-coins", label: "สถานะการคลัง", val: FISCAL_LABELS[ctx.fiscalCondition] }
         ];
-        contextCont.innerHTML = tiles.map(t => `
+        const politicalVal = POLITICAL_LABELS[ctx.politicalClimate];
+        contextCont.innerHTML = `
+            <button onclick="ui.showWhy('บรรยากาศการเมือง', engine.getPoliticalClimateBreakdown())" class="border-2 border-black p-3 text-center hover:bg-stone-50 transition">
+                <i class="fas fa-landmark text-lg text-stone-400 mb-1"></i>
+                <div class="text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1">บรรยากาศการเมือง</div>
+                <div class="text-sm font-black ${politicalVal[1]}">${politicalVal[0]}</div>
+            </button>
+            ${tiles.map(t => `
             <div class="border-2 border-black p-3 text-center">
                 <i class="fas ${t.icon} text-lg text-stone-400 mb-1"></i>
                 <div class="text-[9px] uppercase font-bold text-stone-500 tracking-widest mb-1">${t.label}</div>
                 <div class="text-sm font-black ${t.val[1]}">${t.val[0]}</div>
-            </div>`).join('');
+            </div>`).join('')}`;
 
         const pressure = state.world.protestPressure;
         const legitimacy = state.world.institutionalLegitimacy;
