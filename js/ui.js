@@ -111,7 +111,28 @@ export const ui = {
         document.getElementById('event-modal').classList.remove('hidden');
     },
 
-    updateMain() { 
+    // Long-term Political Memory (Stage D3): unlike showWhy()'s snapshot of CURRENT factors,
+    // this is a chronological log -- the actual record (broken promises, ideology flips, crises
+    // survived or lost) a party's legacyTrust number is built from, browsable instead of just
+    // asserted. recordLegacyEvent() caps this at 20 entries, newest first.
+    showLegacyHistory(partyId) {
+        this.resetModalState();
+        const p = state.parties.find(x => x.id === partyId); if (!p) return;
+        document.getElementById('event-title').innerText = `ประวัติระยะยาว: ${p.name}`;
+        const history = p.legacyHistory || [];
+        let h = `<div class="text-xs text-stone-500 mb-3">ชื่อเสียงระยะยาวปัจจุบัน: <span class="font-mono font-bold text-black">${(p.legacyTrust ?? 60).toFixed(0)}%</span></div><div class="space-y-2 max-h-[350px] overflow-y-auto scroll-custom">`;
+        if (history.length === 0) h += `<div class="italic text-stone-400 text-center">ยังไม่มีเหตุการณ์สำคัญบันทึกไว้</div>`;
+        history.forEach(ev => {
+            const color = ev.delta > 0 ? 'text-emerald-700' : (ev.delta < 0 ? 'text-red-700' : 'text-stone-400');
+            h += `<div class="flex justify-between border-b border-stone-200 pb-1"><div><div class="text-sm">${ev.label}</div><div class="text-[9px] text-stone-400 font-mono">${ev.date}</div></div><span class="font-mono font-bold ${color}">${ev.delta > 0 ? '+' : ''}${ev.delta}</span></div>`;
+        });
+        h += `</div>`;
+        document.getElementById('event-desc').innerHTML = h;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
+
+    updateMain() {
         this.updateHUD(); 
         const activeTab = document.querySelector('.tab-btn.tab-active')?.getAttribute('onclick');
         if(activeTab?.includes('administration')) { this.renderCabinet(); this.renderActivePolicies(); }
@@ -130,6 +151,7 @@ export const ui = {
         this.renderEconomyPanel();
         this.renderSocietyPanel();
         this.renderEarlyWarningPanel();
+        this.renderCostOfLivingPanel();
         this.renderBattlegroundPanel();
     },
 
@@ -257,6 +279,30 @@ export const ui = {
                 <div class="flex justify-between items-center text-[10px] mb-1">
                     <span class="font-bold"><i class="fas ${p.icon} mr-1"></i>${p.label} ${this.trendArrow(p.key, -1)}</span>
                     <span class="font-bold ${textColor}">${levelLabel} &middot; ${value.toFixed(0)}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-stone-200 border border-black"><div class="h-full ${barColor}" style="width:${value}%"></div></div>
+            </button>`;
+        }).join('');
+    },
+
+    // Economic Pressure v1 (Stage D1): 5 cost-of-living indices, each derived from real
+    // production/trade/unemployment/industry-mix signals (engine.getCostOfLivingTarget()), not a
+    // fixed 0-100 buildup like the Early Warning pressures above -- centered at 50, so "good" here
+    // means below 50 (cheaper than the neutral baseline), not just "low".
+    renderCostOfLivingPanel() {
+        const cont = document.getElementById('cost-of-living-panel'); if (!cont) return;
+        cont.innerHTML = Data.COST_OF_LIVING_CATEGORIES.map(cat => {
+            const meta = Data.COST_OF_LIVING_META[cat];
+            const value = state.world.costOfLiving?.[cat] ?? 50;
+            const historyKey = "cost" + cat.charAt(0).toUpperCase() + cat.slice(1);
+            const label = value > 65 ? "แพงมาก" : value > 55 ? "แพงขึ้น" : value < 35 ? "ถูกมาก" : value < 45 ? "ถูกลง" : "ปกติ";
+            const textColor = value > 55 ? "text-red-700" : value < 45 ? "text-emerald-700" : "text-stone-600";
+            const barColor = value > 55 ? "bg-red-600" : value < 45 ? "bg-emerald-600" : "bg-stone-500";
+            return `
+            <button onclick="ui.showWhy('${meta.label}', engine.getCostOfLivingBreakdown('${cat}'), -1)" class="w-full text-left border-2 border-black p-2.5 hover:bg-stone-50 transition">
+                <div class="flex justify-between items-center text-[10px] mb-1">
+                    <span class="font-bold"><i class="fas ${meta.icon} mr-1"></i>${meta.label} ${this.trendArrow(historyKey, -1)}</span>
+                    <span class="font-bold ${textColor}">${label} &middot; ${value.toFixed(0)}</span>
                 </div>
                 <div class="w-full h-1.5 bg-stone-200 border border-black"><div class="h-full ${barColor}" style="width:${value}%"></div></div>
             </button>`;
@@ -469,6 +515,7 @@ export const ui = {
                     <td class="p-3 text-center border-r border-stone-200 uppercase text-[9px] font-bold tracking-wider">${p.status}</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold">${p.seats}</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold ${p.id === state.player.party.id ? 'text-stone-400' : ((p.trust ?? 70) > 60 ? 'text-emerald-700' : ((p.trust ?? 70) < 40 ? 'text-red-700' : 'text-stone-700'))}">${p.id === state.player.party.id ? '-' : (p.trust ?? 70).toFixed(0) + '%'}${(p.dependence || 0) > 20 ? `<div class="text-[8px] font-normal normal-case text-purple-700">พึ่งพา ${(p.dependence).toFixed(0)}%</div>` : ''}</td>
+                    <td class="p-3 text-center border-r border-stone-200 font-mono font-bold cursor-pointer hover:underline ${(p.legacyTrust ?? 60) > 65 ? 'text-emerald-700' : ((p.legacyTrust ?? 60) < 45 ? 'text-red-700' : 'text-stone-700')}" onclick="ui.showLegacyHistory('${p.id}')">${(p.legacyTrust ?? 60).toFixed(0)}%</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold">${(p.popularity ?? 0).toFixed(0)}%</td>
                     <td class="p-3 text-stone-500 italic border-r border-stone-200">${p.ideologies[0]}</td>
                     <td class="p-3 text-stone-500 italic">${p.goals[0]}</td>
@@ -483,6 +530,39 @@ export const ui = {
                 <div class="text-stone-500">Neu: ${nT}</div>
             </div>
         `;
+
+        // Better Why System (Stage D4): "ทำไม MP โหวตค้าน" -- the seat dots above color a rebel
+        // red/green same as anyone else; this is the only place their break with the party is
+        // named at all, with a why-button reading the exact conditions runVote() captured for
+        // that specific vote (lastVoteLog's own rebelReasons, not re-derived from current state).
+        const rebelsPanel = document.getElementById('vote-rebels-panel');
+        if (rebelsPanel) {
+            const rebels = (state.lastVoteLog || []).map((v, i) => ({ ...v, idx: i })).filter(v => v.isRebel);
+            rebelsPanel.innerHTML = rebels.length === 0 ? '' : `
+                <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold border-t-2 border-stone-300 pt-3">โหวตสวนมติพรรค (${rebels.length})</div>
+                ${rebels.slice(0, 8).map(v => `
+                    <button onclick="ui.showMPVoteReason(${v.idx})" class="w-full flex justify-between items-center text-[10px] py-1 hover:bg-stone-200 transition px-1">
+                        <span class="flex items-center gap-1.5"><span class="inline-block w-1.5 h-1.5 rounded-full border border-black" style="background:${v.color}"></span>${v.name}</span>
+                        <i class="fas fa-circle-question text-stone-400"></i>
+                    </button>
+                `).join('')}
+                ${rebels.length > 8 ? `<div class="text-[9px] text-stone-400">และอีก ${rebels.length - 8} คน</div>` : ''}
+            `;
+        }
+    },
+
+    showMPVoteReason(idx) {
+        const v = (state.lastVoteLog || [])[idx]; if (!v) return;
+        this.resetModalState();
+        document.getElementById('event-title').innerText = `ทำไม ${v.name} โหวตสวนมติพรรค`;
+        const reasons = v.rebelReasons || [];
+        let h = `<div class="text-xs text-stone-500 mb-3">${v.party} &middot; ผลโหวต: ${v.vote === 'yes' ? 'เห็นชอบ' : v.vote === 'no' ? 'ไม่เห็นชอบ' : 'งดออกเสียง'} (คะแนนจากพรรค ${v.score ?? '-'})</div><div class="space-y-2">`;
+        if (reasons.length === 0) h += `<div class="italic text-stone-400 text-center">ไม่มีเหตุผลชัดเจนบันทึกไว้</div>`;
+        reasons.forEach(r => { h += `<div class="border-b border-stone-200 pb-1 text-sm">${r}</div>`; });
+        h += `</div>`;
+        document.getElementById('event-desc').innerHTML = h;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
     },
 
     // --- 4. PARTY HQ (ปรับใหม่: Manifesto Style) ---
@@ -693,7 +773,10 @@ export const ui = {
                 ${isLogistics ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas fa-earth-asia mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">ทุกประเทศเฉลี่ย (${avgTradeRelation.toFixed(0)}%)</span></div>` : ''}
             </div>
             <div class="mt-4 pt-3 border-t-2 border-black">
-                <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2">สนามเลือกตั้ง (ถ้าเลือกตั้งวันนี้)</div>
+                <div class="flex justify-between items-center mb-2">
+                    <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold">สนามเลือกตั้ง (ถ้าเลือกตั้งวันนี้)</div>
+                    <button onclick="ui.showWhy('คะแนนพรรคท่านใน${p.name}', engine.getProvinceVoteShareBreakdown('${p.name}', '${state.player.party.id}'))" class="text-[9px] text-stone-400 hover:text-black"><i class="fas fa-circle-question"></i> ทำไม</button>
+                </div>
                 <div class="flex justify-between text-xs border-b border-stone-200 pb-1 mb-1"><span>รัฐบาล ${layer.govSupport.toFixed(0)}% &middot; ฝ่ายค้าน ${layer.oppSupport.toFixed(0)}%</span><span class="font-bold ${LEANING_LABELS[layer.leaning][1]}">${LEANING_LABELS[layer.leaning][0]}</span></div>
                 <div class="w-full h-2 bg-red-200 border border-black mb-2 flex overflow-hidden"><div class="h-full bg-blue-500" style="width:${layer.govSupport}%"></div></div>
                 <div class="flex justify-between text-xs border-b border-stone-200 pb-1"><span>ความสูสี</span><span class="font-bold ${COMPETITIVE_LABELS[layer.competitiveness][1]}">${COMPETITIVE_LABELS[layer.competitiveness][0]}</span></div>
@@ -753,10 +836,10 @@ export const ui = {
             <div class="bg-white p-4 border-2 border-black shadow-[4px_4px_0_rgba(0,0,0,0.1)] hover:-translate-y-1 transition duration-200">
                 <div class="flex justify-between items-start mb-2">
                     <div class="text-2xl text-stone-400"><i class="fas ${f.icon}"></i></div>
-                    <div class="text-right">
+                    <button onclick="ui.showWhy('ความนิยม: ${f.name}', engine.getFactionApprovalBreakdown('${f.name}'))" class="text-right hover:opacity-70 transition" title="ทำไมกลุ่มนี้พอใจ/ไม่พอใจ">
                         <div class="text-2xl font-black font-mono leading-none">${f.approval.toFixed(0)}%</div>
-                        <div class="text-[8px] uppercase tracking-widest font-bold text-stone-500">Approval</div>
-                    </div>
+                        <div class="text-[8px] uppercase tracking-widest font-bold text-stone-500">Approval <i class="fas fa-circle-question"></i></div>
+                    </button>
                 </div>
                 <div class="font-bold text-sm uppercase tracking-wide border-t-2 border-black pt-2 mt-2">${f.name}</div>
                 <div class="w-full bg-stone-200 h-1 mt-2"><div class="h-full bg-black" style="width: ${f.approval}%"></div></div>
@@ -1042,7 +1125,11 @@ export const ui = {
         `;
         document.getElementById('event-options').innerHTML = `<button onclick="window.engine.finalizeVote('${p.name}', ${passed})" class="w-full p-4 ${passed ? 'bg-black' : 'bg-red-700'} text-white font-bold border-2 border-black text-lg hover:opacity-90">รับทราบผล</button>`;
     },
-    showQuidProQuo(p, demand, party) { this.resetModalState(); document.getElementById('event-title').innerText = `Backroom Deal`; document.getElementById('event-desc').innerHTML = `<div class="border-l-4 border-black pl-4 my-4"><div class="font-bold text-sm uppercase text-stone-500">Proposal from ${party.name} <span class="ml-2 font-mono ${(party.trust ?? 70) > 60 ? 'text-emerald-700' : ((party.trust ?? 70) < 40 ? 'text-red-700' : 'text-stone-500')}">(Trust: ${(party.trust ?? 70).toFixed(0)}%)</span></div><div class="font-serif text-lg italic">"We will support ${p.name} if you approve this:"</div><div class="mt-2 font-bold bg-stone-100 p-2 border border-black">${demand.name}</div><div class="mt-2 text-xs text-stone-500">ปฏิเสธจะทำให้ trust ของพรรคนี้ลดลง และมีผลต่อการโหวตครั้งต่อๆไปด้วย ไม่ใช่แค่ร่างนี้</div></div>`; document.getElementById('event-options').innerHTML = `<div class="grid grid-cols-2 gap-4"><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", true)' class="p-3 bg-black text-white font-bold uppercase hover:opacity-80">Accept</button><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", false)' class="p-3 border-2 border-black font-bold uppercase hover:bg-stone-100">Reject</button></div>`; document.getElementById('event-modal').classList.remove('hidden'); },
+    // Better Why System (Stage D4): "ทำไมพรรคร่วมเรียกร้องเพิ่ม" -- badActor used to be picked
+    // uniformly at random with nothing shown but its trust; the why line now reads the real
+    // dependence number that both picked this specific partner (engine.js's startVote()) and set
+    // quidProQuoChance in the first place, instead of the demand just appearing unexplained.
+    showQuidProQuo(p, demand, party, why) { this.resetModalState(); document.getElementById('event-title').innerText = `Backroom Deal`; document.getElementById('event-desc').innerHTML = `<div class="border-l-4 border-black pl-4 my-4"><div class="font-bold text-sm uppercase text-stone-500">Proposal from ${party.name} <span class="ml-2 font-mono ${(party.trust ?? 70) > 60 ? 'text-emerald-700' : ((party.trust ?? 70) < 40 ? 'text-red-700' : 'text-stone-500')}">(Trust: ${(party.trust ?? 70).toFixed(0)}%)</span></div><div class="font-serif text-lg italic">"We will support ${p.name} if you approve this:"</div><div class="mt-2 font-bold bg-stone-100 p-2 border border-black">${demand.name}</div>${why ? `<div class="mt-2 text-[10px] text-stone-500">ทำไมตอนนี้: พรรคนี้พึ่งพาท่านมากที่สุดในบรรดาพรรคร่วม (${(party.dependence || 0).toFixed(0)}%) &middot; โอกาสมีดีลรอบนี้ ${(why.quidProQuoChance*100).toFixed(0)}% (ยิ่งพรรคร่วมพึ่งพาท่านเฉลี่ยสูง ${why.avgDependence.toFixed(0)}% ยิ่งมาบ่อย)</div>` : ''}<div class="mt-2 text-xs text-stone-500">ปฏิเสธจะทำให้ trust ของพรรคนี้ลดลง และมีผลต่อการโหวตครั้งต่อๆไปด้วย ไม่ใช่แค่ร่างนี้</div></div>`; document.getElementById('event-options').innerHTML = `<div class="grid grid-cols-2 gap-4"><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", true)' class="p-3 bg-black text-white font-bold uppercase hover:opacity-80">Accept</button><button onclick='engine.processQuidProQuo("${p.name}", "${demand.name}", "${party.id}", false)' class="p-3 border-2 border-black font-bold uppercase hover:bg-stone-100">Reject</button></div>`; document.getElementById('event-modal').classList.remove('hidden'); },
     showStakeholderReview(p, stakeholders, proposer) {
         this.resetModalState();
         document.getElementById('event-title').innerText = `Policy Review`;
@@ -1053,11 +1140,17 @@ export const ui = {
         // below are the full legal effect, scaled down at actual implementation time.
         const { effectiveness, fitLabel } = engine.getImplementationEffectiveness(p);
         const effColor = effectiveness > 0.85 ? 'text-emerald-700' : effectiveness > 0.6 ? 'text-amber-700' : 'text-red-700';
-        h += `<div class="mb-3 pb-2 border-b-2 border-black"><div class="flex justify-between text-xs"><span class="font-bold uppercase tracking-widest text-stone-500">ประสิทธิผลคาดการณ์ (ถ้าผ่านตอนนี้)</span><span class="font-mono font-bold ${effColor}">${(effectiveness*100).toFixed(0)}%</span></div><div class="text-[10px] text-stone-500 mt-1">${fitLabel}</div></div>`;
+        h += `<div class="mb-3 pb-2 border-b-2 border-black"><button onclick="ui.showWhy('ประสิทธิผลนโยบาย', engine.getEffectivenessBreakdown('${p.name}'))" class="w-full text-left hover:bg-stone-50 transition"><div class="flex justify-between text-xs"><span class="font-bold uppercase tracking-widest text-stone-500">ประสิทธิผลคาดการณ์ (ถ้าผ่านตอนนี้) <i class="fas fa-circle-question text-stone-300"></i></span><span class="font-mono font-bold ${effColor}">${(effectiveness*100).toFixed(0)}%</span></div><div class="text-[10px] text-stone-500 mt-1">${fitLabel}</div></button></div>`;
         stakeholders.forEach(s => {
-            const impact = p.impact[s.name] || 0;
-            const color = impact > 0 ? 'text-green-700' : (impact < 0 ? 'text-red-700' : 'text-stone-400');
-            h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${color}">${impact > 0 ? '+' : ''}${impact}</span></div>`;
+            const raw = p.impact[s.name] || 0;
+            // Faction Response v2 (Stage D2): the preview now shows what this faction would
+            // actually feel right now (income, unemployment, cost of living, province neglect,
+            // legitimacy, and how many times this exact bill has already been passed before),
+            // not the flat template number -- the same math finalizeVote() uses, so the preview
+            // can't drift from the real outcome.
+            const projected = raw === 0 ? 0 : engine.getFactionResponseMultiplier(s.name, raw * effectiveness, p, state.player.party);
+            const color = projected > 0 ? 'text-green-700' : (projected < 0 ? 'text-red-700' : 'text-stone-400');
+            h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${color}">${projected > 0 ? '+' : ''}${projected.toFixed(1)}</span></div>`;
         });
         if (p.worldImpact) {
             h += `<div class="mt-2 pt-2 border-t-2 border-black text-[9px] uppercase tracking-widest text-stone-500 font-bold">ผลต่อสถิติประเทศ</div>`;

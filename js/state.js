@@ -2,7 +2,7 @@ export const state = {
     date: new Date(2024, 0, 1),
     speed: 0, 
     player: { name: "", personalFunds: 150000000, background: null, party: null, position: "", shadowCabinet: {} },
-    world: { nationalBudget: 3400000000000, approval: 50, growth: 2.4, cabinetStability: 80, transparency: 100, stabilityPenalty: 0, growthPenalty: 0, unemployment: 20, crime: 35, health: 60, education: 55, environment: 55, military: 50, protestPressure: 20, institutionalLegitimacy: 70, coalitionCollapsePressure: 0, economicCrisisPressure: 0, coupPressure: 0, statMods: { unemployment: [], crime: [], health: [], education: [], environment: [], military: [] } },
+    world: { nationalBudget: 3400000000000, approval: 50, growth: 2.4, cabinetStability: 80, transparency: 100, stabilityPenalty: 0, growthPenalty: 0, unemployment: 20, crime: 35, health: 60, education: 55, environment: 55, military: 50, protestPressure: 20, institutionalLegitimacy: 70, coalitionCollapsePressure: 0, economicCrisisPressure: 0, coupPressure: 0, costOfLiving: { food: 50, energy: 50, housing: 50, industrial: 50, transport: 50 }, statMods: { unemployment: [], crime: [], health: [], education: [], environment: [], military: [], food: [], energy: [], housing: [], industrial: [], transport: [] } },
     factions: [],
     foreign: [],
     provinces: [],
