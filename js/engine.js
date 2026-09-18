@@ -286,6 +286,75 @@ function getCoupBreakdown() {
         "แรงกดดันประท้วงสูง": Math.max(0, (state.world.protestPressure - 50) * 0.3)
     };
 }
+// Economic Pressure v1 (Stage D1): the same 5-term-breakdown-per-stat convention getCoupBreakdown()
+// etc. use, but signed (a term can push the index up OR down) rather than clamped-positive-only --
+// cost-of-living is centered at 50 like growth, not a one-directional 0-100 buildup like the
+// pressures above, so it follows computeGrowth()'s breakdown shape instead of getPressureBreakdown()'s.
+// Reads production (provinceOutput() by industry), trade exposure (the FOREIGN_POWERS partner
+// whose keyIndustry matches), unemployment, and industry mix (outputShare) -- the 4 structural
+// inputs the roadmap names; external shocks are a separate decaying-modifier channel (see tick()
+// and triggerCrisis()'s Economic branch) layered on top of this target, not part of it.
+function getCostOfLivingBreakdown(category) {
+    const totalProduction = state.provinces.reduce((s, p) => s + provinceOutput(p), 0) || 1;
+    const outputShare = (industryName) => state.provinces.filter(p => p.industry === industryName).reduce((s, p) => s + provinceOutput(p), 0) / totalProduction;
+    const relationFor = (industryName) => {
+        const partner = Data.FOREIGN_POWERS.find(f => f.keyIndustry === industryName);
+        const c = partner ? state.foreign.find(x => x.id === partner.id) : null;
+        return c ? c.relation : 50;
+    };
+    const avgInvestment = state.provinces.length > 0 ? state.provinces.reduce((s, p) => s + (p.investmentLevel ?? 50), 0) / state.provinces.length : 50;
+    // costBaselineShares (generateProvinces()) is this game's own actual day-one output shares --
+    // see the comment there for why a hand-guessed "neutral" percentage caused a real feedback
+    // spiral in testing. Falls back to 0 bias (share === baseline) if read before init() sets it.
+    const baseline = state.world.costBaselineShares || { food: outputShare("เกษตรกรรม") + outputShare("ประมง"), energyDemand: outputShare("อุตสาหกรรม") + outputShare("เทคโนโลยี"), industrial: outputShare("อุตสาหกรรม"), transport: outputShare("โลจิสติกส์และการส่งออก"), housingDemand: outputShare("เทคโนโลยี") + outputShare("การท่องเที่ยว") };
+
+    if (category === "food") {
+        const supply = outputShare("เกษตรกรรม") + outputShare("ประมง");
+        return {
+            "ผลผลิตเกษตร/ประมงเทียบวันแรก": -(supply - baseline.food) * 35,
+            "ความสัมพันธ์การค้ากับจีน": -(relationFor("เกษตรกรรม") - 50) * 0.15,
+            "การว่างงานสูง": (state.world.unemployment - 20) * 0.08
+        };
+    }
+    if (category === "energy") {
+        const demand = outputShare("อุตสาหกรรม") + outputShare("เทคโนโลยี");
+        const avgRelation = state.foreign.length > 0 ? state.foreign.reduce((s, c) => s + c.relation, 0) / state.foreign.length : 50;
+        return {
+            "ความต้องการพลังงานเทียบวันแรก": (demand - baseline.energyDemand) * 20,
+            "ความสัมพันธ์การค้าระหว่างประเทศโดยรวม": -(avgRelation - 50) * 0.15
+        };
+    }
+    if (category === "housing") {
+        return {
+            "การลงทุนในพื้นที่เฉลี่ยทั่วประเทศ": (avgInvestment - 50) * 0.25,
+            "สัดส่วนอุตสาหกรรมมูลค่าสูงเทียบวันแรก": (outputShare("เทคโนโลยี") + outputShare("การท่องเที่ยว") - baseline.housingDemand) * 10
+        };
+    }
+    if (category === "industrial") {
+        const supply = outputShare("อุตสาหกรรม");
+        return {
+            "กำลังผลิตภาคอุตสาหกรรมเทียบวันแรก": -(supply - baseline.industrial) * 30,
+            "ความสัมพันธ์การค้ากับญี่ปุ่น": -(relationFor("อุตสาหกรรม") - 50) * 0.15,
+            "การว่างงานสูง": (state.world.unemployment - 20) * 0.1
+        };
+    }
+    if (category === "transport") {
+        const supply = outputShare("โลจิสติกส์และการส่งออก");
+        return {
+            "โครงข่ายโลจิสติกส์เทียบวันแรก": -(supply - baseline.transport) * 25,
+            "ราคาพลังงาน": ((state.world.costOfLiving?.energy ?? 50) - 50) * 0.15,
+            "การว่างงานสูง": (state.world.unemployment - 20) * 0.05
+        };
+    }
+    return {};
+}
+function getCostOfLivingTarget() {
+    const target = {};
+    Data.COST_OF_LIVING_CATEGORIES.forEach(cat => {
+        target[cat] = Math.max(0, Math.min(100, 50 + Object.values(getCostOfLivingBreakdown(cat)).reduce((s, v) => s + v, 0)));
+    });
+    return target;
+}
 function getApprovalBreakdown() {
     const rows = {};
     [...state.factions].sort((a, b) => Math.abs(b.approval - 50) - Math.abs(a.approval - 50)).slice(0, 5)
@@ -325,8 +394,10 @@ function computeGrowth(currentGrowth) {
     const totalProduction = state.provinces.reduce((s, prov) => s + provinceOutput(prov), 0);
     const productionPerCapita = totalProduction / totalPop;
     const productionBias = state.world.baseProductionPerCapita ? (productionPerCapita / state.world.baseProductionPerCapita - 1) * 8 : 0;
+    // Coefficient was originally 0.16 -- see the faction tick loop's growthBias comment (same
+    // file) for the runaway this coupling caused and why both sides needed cutting together.
     const breakdown = {
-        "แรงหนุนจากกลุ่มผลประโยชน์": weightedApproval * 0.16,
+        "แรงหนุนจากกลุ่มผลประโยชน์": weightedApproval * 0.04,
         "คุณภาพชีวิตประชาชน": (qualityOfLife - 40) * 0.03,
         "ผลผลิตอุตสาหกรรมเทียบฐาน": productionBias,
         "ผลกระทบวิกฤตเศรษฐกิจล่าสุด": -(state.world.growthPenalty || 0)
@@ -696,6 +767,20 @@ export const gameClock = {
             state.world[stat] = Math.max(0, Math.min(100, state.world[stat] + (meta.baseline - state.world[stat]) * 0.002 * state.speed + (Math.random() - 0.5) * 0.1 * state.speed));
         });
 
+        // Economic Pressure v1 (Stage D1): same decaying-modifier sweep as the WORLD_STAT_META
+        // loop above (applyWorldStatImpact() already works on any stat name, cost categories
+        // included -- triggerCrisis()'s Economic branch uses it as the "external shock" channel),
+        // but blended toward a live getCostOfLivingTarget() instead of a fixed meta.baseline --
+        // these are derived from production/trade/unemployment/industry mix every tick, not
+        // something a policy sets directly, so a fixed-baseline pull would fight the real target.
+        const costTarget = getCostOfLivingTarget();
+        Data.COST_OF_LIVING_CATEGORIES.forEach(cat => {
+            const mods = state.world.statMods[cat] || (state.world.statMods[cat] = []);
+            mods.forEach(m => { state.world.costOfLiving[cat] = Math.max(0, Math.min(100, state.world.costOfLiving[cat] + m.perDay * state.speed)); m.remaining -= state.speed; });
+            state.world.statMods[cat] = mods.filter(m => m.remaining > 0);
+            state.world.costOfLiving[cat] = Math.max(0, Math.min(100, state.world.costOfLiving[cat] + (costTarget[cat] - state.world.costOfLiving[cat]) * 0.05 * state.speed));
+        });
+
         state.provinces.forEach(prov => {
             (prov.modifiers || []).forEach(m => { prov.investmentLevel = Math.max(0, Math.min(100, prov.investmentLevel + m.perDay * state.speed)); m.remaining -= state.speed; });
             prov.modifiers = (prov.modifiers || []).filter(m => m.remaining > 0);
@@ -710,13 +795,52 @@ export const gameClock = {
         state.factions.forEach(f => {
             (f.modifiers || []).forEach(m => { f.approval = Math.max(0, Math.min(100, f.approval + m.perDay * state.speed)); m.remaining -= state.speed; });
             f.modifiers = (f.modifiers || []).filter(m => m.remaining > 0);
-            // Wealthier/more capital-exposed factions feel national growth (or a recession) more directly, day to day
-            const growthBias = (state.world.growth / 10) * (f.wealth / 100) * 0.3;
+            // Wealthier/more capital-exposed factions feel national growth (or a recession) more
+            // directly, day to day. Coefficient was originally 0.3 -- computeGrowth() reads these
+            // same factions' approval straight back via weightedApproval (below), a two-way
+            // coupling that turned out to have no damping: pre-existing, found while testing
+            // Stage D's own new faction-approval channel by watching growth/approval over a full
+            // ~13-year calm-baseline run (longer than any prior stage had actually checked) --
+            // growth crashed from near 0 to -9.99% within ~7 years and EVERY faction pinned at
+            // 0% approval, with no recovery for the rest of the run, entirely reproducible with
+            // zero Stage D code present. Cut here and in computeGrowth()'s weightedApproval
+            // coefficient below, the same ~75% reduction pattern the Phase 5 unemployment and
+            // Stage C1 economicCrisisPressure feedback fixes both needed.
+            const growthBias = (state.world.growth / 10) * (f.wealth / 100) * 0.08;
             // The unemployment/environment indices ripple into the factions they hit hardest
             let statBias = 0;
             if (f.name === "สิ่งแวดล้อม") statBias += (state.world.environment - 55) * 0.03;
             if (f.name === "คนว่างงาน" || f.name === "แรงงาน") statBias -= (state.world.unemployment - 20) * 0.03;
-            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + growthBias * state.speed + statBias * state.speed));
+            // Economic Pressure v1 (Stage D1): the roadmap's own example -- rising food cost hits
+            // labor/farmers differently, rising housing cost hits middle class/youth harder --
+            // via COST_OF_LIVING_SENSITIVITY's per-faction weights per category. A negative
+            // weight (เกษตรกร on food) means that faction actually benefits when the index rises.
+            // Coefficient was originally 0.02 -- with 8 of the 9 weighted factions hurt by a
+            // rising index and only เกษตรกร ever gaining, a calm-baseline run showed this
+            // systematically dragging weightedApproval down, which fed into computeGrowth() and
+            // back into approval via the existing growthBias term below: growth got stuck at
+            // -6% to -9.5% and laborApproval pinned at 0 for the full 30-year run, never
+            // recovering (this was on top of the cost targets themselves settling structurally
+            // above 50 from a separate bug, since fixed in getCostOfLivingBreakdown() --
+            // costBaselineShares). Cut to 0.006, the same ~70% reduction the Phase 5 unemployment
+            // feedback and Stage C1 economicCrisisPressure fixes both needed.
+            let costBias = 0;
+            const sensitivity = Data.COST_OF_LIVING_SENSITIVITY[f.name];
+            if (sensitivity) {
+                Object.entries(sensitivity).forEach(([cat, weight]) => {
+                    costBias -= (state.world.costOfLiving[cat] - 50) * weight * 0.006;
+                });
+            }
+            // Political normalcy: every other drifting value in the game (MP trust, party trust,
+            // WORLD_STAT_META stats) pulls back toward a baseline over time -- faction approval
+            // never did, so once growthBias/statBias/costBias pushed a faction to the 0 or 100
+            // floor/ceiling, nothing ever pulled it back, and it stayed there for the rest of a
+            // calm-baseline run (confirmed directly: this still happened with costBias forced to
+            // 0, so it isn't specific to Stage D's new term -- growthBias alone was enough).
+            // Gentle on purpose (0.01, versus trust's 0.1) -- this should stop permanent lock-in
+            // at an extreme, not erase genuine sustained dissatisfaction or genuine enthusiasm.
+            const normalcyPull = (50 - f.approval) * 0.01;
+            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + growthBias * state.speed + statBias * state.speed + costBias * state.speed + normalcyPull * state.speed));
         });
 
         state.foreign.forEach(c => {
@@ -770,14 +894,14 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown,
 
     init() {
         state.voteModifier = null;
         state.world.transparency = 100;
         state.world.stabilityPenalty = 0;
         Object.entries(Data.WORLD_STAT_META).forEach(([stat, meta]) => { state.world[stat] = meta.baseline; });
-        state.world.statMods = { unemployment: [], crime: [], health: [], education: [], environment: [], military: [] };
+        state.world.statMods = { unemployment: [], crime: [], health: [], education: [], environment: [], military: [], food: [], energy: [], housing: [], industrial: [], transport: [] };
         state.world.electionDay = new Date(state.date);
         state.world.electionDay.setDate(state.world.electionDay.getDate() + Data.ELECTION_TERM_DAYS);
         state.history = { approval: [], budget: [] };
@@ -829,6 +953,10 @@ export const engine = {
         state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, Object.values(getCoalitionCollapseBreakdown()).reduce((s, v) => s + v, 0)));
         state.world.economicCrisisPressure = Math.max(0, Math.min(100, Object.values(getEconomicCrisisBreakdown()).reduce((s, v) => s + v, 0)));
         state.world.coupPressure = Math.max(0, Math.min(100, Object.values(getCoupBreakdown()).reduce((s, v) => s + v, 0)));
+        // Economic Pressure v1 (Stage D1): same day-one treatment -- real production/trade/
+        // unemployment/industry-mix numbers from turn one, not a flat 50 every game opens on
+        // regardless of the province/industry mix just generated above.
+        state.world.costOfLiving = getCostOfLivingTarget();
 
         ui.renderCabinet(); ui.renderMinistryList();
         this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
@@ -838,6 +966,13 @@ export const engine = {
         ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure"].forEach(key => {
             state.history[key] = [];
             for (let i = 0; i < 6; i++) state.history[key].push(state.world[key]);
+        });
+        // Economic Pressure v1 (Stage D1): flat "cost<Category>" history keys, matching the
+        // existing flat state.history[key] convention rather than nesting an object per category.
+        Data.COST_OF_LIVING_CATEGORIES.forEach(cat => {
+            const key = "cost" + cat.charAt(0).toUpperCase() + cat.slice(1);
+            state.history[key] = [];
+            for (let i = 0; i < 6; i++) state.history[key].push(state.world.costOfLiving[cat]);
         });
         setInterval(() => gameClock.tick(), 1000);
     },
@@ -928,6 +1063,28 @@ export const engine = {
         // biased once industries actually out- or under-perform this starting mix -- not by the mix itself.
         const totalProduction = state.provinces.reduce((s, prov) => s + provinceOutput(prov), 0);
         state.world.baseProductionPerCapita = totalProduction / totalPop;
+
+        // Economic Pressure v1 (Stage D1): same reasoning, for getCostOfLivingBreakdown()'s
+        // industry-mix terms -- an earlier version compared each industry's output share against
+        // a hand-guessed "neutral" percentage (e.g. food assumed 35% agri+fishing share), which
+        // didn't match this game's actual randomly-generated province/industry mix (REGION_
+        // INDUSTRY_DEFAULT + PROVINCE_INDUSTRY_OVERRIDES). Confirmed in a 30-year calm-baseline
+        // run: cost indices settled structurally above 50 from day one (not from any real shock),
+        // which fed a persistent drag through COST_OF_LIVING_SENSITIVITY into faction approval,
+        // then into growth via computeGrowth()'s existing weightedApproval term, then back into
+        // approval via the existing growthBias term -- growth got stuck at -6% to -9.5% and
+        // laborApproval pinned at 0 for the entire run, never recovering. Capturing this game's
+        // own actual day-one shares as the reference point (the same fix baseProductionPerCapita
+        // already uses above) means the index only moves once the mix genuinely shifts from where
+        // it started, not from a guess about what a "typical" mix should look like.
+        const shareOf = (industryName) => state.provinces.filter(p => p.industry === industryName).reduce((s, p) => s + provinceOutput(p), 0) / (totalProduction || 1);
+        state.world.costBaselineShares = {
+            food: shareOf("เกษตรกรรม") + shareOf("ประมง"),
+            energyDemand: shareOf("อุตสาหกรรม") + shareOf("เทคโนโลยี"),
+            industrial: shareOf("อุตสาหกรรม"),
+            transport: shareOf("โลจิสติกส์และการส่งออก"),
+            housingDemand: shareOf("เทคโนโลยี") + shareOf("การท่องเที่ยว")
+        };
     },
 
     generateGameParties() {
@@ -1020,10 +1177,14 @@ export const engine = {
         c.modifiers.push({ source, perDay: value / days, remaining: days });
     },
 
-    // Same idea again, for one of the 5 national stats a policy's worldImpact can move
-    // (unemployment, crime, health, education, environment).
+    // Same idea again, for any stat with a statMods channel: originally just the 6
+    // WORLD_STAT_META stats a policy's worldImpact can move, now also the 5 Stage D1 cost-of-
+    // living categories (external shocks -- see triggerCrisis()'s Economic branch). The old guard
+    // here (`if (!Data.WORLD_STAT_META[stat]) return`) silently no-op'd on any other stat name,
+    // which is exactly what it did to the food/energy shock calls below until caught in testing --
+    // this function never actually reads anything else from WORLD_STAT_META[stat], so the guard
+    // was only ever blocking legitimate generic use, not protecting against a real bug.
     applyWorldStatImpact(stat, value, source, days = 60) {
-        if (!Data.WORLD_STAT_META[stat]) return;
         if (!state.world.statMods[stat]) state.world.statMods[stat] = [];
         state.world.statMods[stat].push({ source, perDay: value / days, remaining: days });
     },
@@ -1159,8 +1320,14 @@ export const engine = {
             state.history[key].push(state.world[key]);
             if (state.history[key].length > 6) state.history[key].shift();
         });
+        Data.COST_OF_LIVING_CATEGORIES.forEach(cat => {
+            const key = "cost" + cat.charAt(0).toUpperCase() + cat.slice(1);
+            if (!state.history[key]) state.history[key] = [];
+            state.history[key].push(state.world.costOfLiving[cat]);
+            if (state.history[key].length > 6) state.history[key].shift();
+        });
     },
-    
+
     lobbyIndividual(mpId) {
         const mp = state.leaders.find(l => l.id === mpId);
         const trustMod = mp.trust >= 70 ? 0.8 : (mp.trust <= 30 ? 1.4 : 1);
@@ -1270,6 +1437,12 @@ export const engine = {
             // Same venting the Protest branch already does for protestPressure -- the crisis
             // itself lets off some of the pressure that built up to cause it.
             state.world.economicCrisisPressure = Math.max(0, state.world.economicCrisisPressure - 35);
+            // Economic Pressure v1 (Stage D1): "ค่าครองชีพพุ่งสูง" in the headline above used to
+            // be flavor text with no mechanical effect -- a real external shock now backs it,
+            // the same decaying applyWorldStatImpact() channel a policy's worldImpact uses,
+            // just on the two cost categories a recession actually spikes first.
+            this.applyWorldStatImpact("food", 15, "วิกฤตเศรษฐกิจถดถอย", 45);
+            this.applyWorldStatImpact("energy", 12, "วิกฤตเศรษฐกิจถดถอย", 45);
             this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง");
         } else {
             state.world.stabilityPenalty = Math.min(50, (state.world.stabilityPenalty || 0) + 15);

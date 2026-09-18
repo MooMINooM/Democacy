@@ -198,6 +198,43 @@ export const WORLD_STAT_META = {
     military: { label: "ความพร้อมทางทหาร", icon: "fa-shield-halved", baseline: 50, goodDirection: 1 }
 };
 
+// Economic Pressure v1 (Stage D1): 5 cost-of-living indices, not the 30-50 individual goods the
+// roadmap explicitly says this version skips. Each is DERIVED every tick from real production/
+// trade/unemployment/industry-mix signals (engine.js's getCostOfLivingTarget()), the same
+// target-and-drift way protestPressure etc. already work -- not something a policy sets directly
+// like WORLD_STAT_META's 6 stats, so it deliberately isn't merged into that table (a fixed-
+// baseline pull would fight a live-computed target). 50 = neutral; above 50 = more expensive than
+// the neutral baseline, below = cheaper.
+export const COST_OF_LIVING_META = {
+    food: { label: "ค่าอาหาร", icon: "fa-bowl-rice" },
+    energy: { label: "ค่าพลังงาน", icon: "fa-bolt" },
+    housing: { label: "ค่าที่อยู่อาศัย", icon: "fa-house" },
+    industrial: { label: "ต้นทุนภาคอุตสาหกรรม", icon: "fa-industry" },
+    transport: { label: "ค่าขนส่ง", icon: "fa-truck" }
+};
+export const COST_OF_LIVING_CATEGORIES = Object.keys(COST_OF_LIVING_META);
+
+// Each faction feels a rising cost index differently -- the roadmap's own examples (food hits
+// labor/farmers differently, housing hits middle class/youth harder) are both in here. Weight is
+// how strongly a category above/below 50 moves that faction's approval; a negative weight means
+// the faction actually benefits when that cost rises (farmers are food PRODUCERS, not just
+// consumers, so rising food prices raise their income). Only the factions economics visibly
+// drives get an entry here, the same restraint the existing statBias block already uses (only
+// สิ่งแวดล้อม reads environment, only คนว่างงาน/แรงงาน read unemployment) -- more identity-driven
+// factions (กองทัพ, ผู้นำศาสนา, ชาตินิยมขวาจัด, etc.) aren't pulled into an economic mechanic that
+// isn't really what moves them.
+export const COST_OF_LIVING_SENSITIVITY = {
+    "แรงงาน": { food: 1.0, energy: 0.6, transport: 0.6, housing: 0.3 },
+    "เกษตรกร": { food: -0.4, industrial: 0.3 },
+    "ชนชั้นกลาง": { housing: 1.2, transport: 0.5, energy: 0.4, food: 0.3 },
+    "เด็กรุ่นใหม่": { housing: 1.3, transport: 0.4, food: 0.3 },
+    "คนว่างงาน": { food: 1.2, energy: 0.8, housing: 0.6, transport: 0.5 },
+    "นายทุน": { industrial: 0.8, energy: 0.5 },
+    "ทุนข้ามชาติ": { industrial: 0.6, energy: 0.4 },
+    "ท้องถิ่น": { transport: 0.8, food: 0.4, energy: 0.5 },
+    "ข้าราชการ": { food: 0.4, housing: 0.5, transport: 0.3 }
+};
+
 // The 6 conventional regions of Thailand, in the order the province map lays them out.
 export const REGIONS = ["เหนือ", "อีสาน", "กลาง", "ตะวันออก", "ตะวันตก", "ใต้"];
 

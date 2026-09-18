@@ -130,6 +130,7 @@ export const ui = {
         this.renderEconomyPanel();
         this.renderSocietyPanel();
         this.renderEarlyWarningPanel();
+        this.renderCostOfLivingPanel();
         this.renderBattlegroundPanel();
     },
 
@@ -257,6 +258,30 @@ export const ui = {
                 <div class="flex justify-between items-center text-[10px] mb-1">
                     <span class="font-bold"><i class="fas ${p.icon} mr-1"></i>${p.label} ${this.trendArrow(p.key, -1)}</span>
                     <span class="font-bold ${textColor}">${levelLabel} &middot; ${value.toFixed(0)}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-stone-200 border border-black"><div class="h-full ${barColor}" style="width:${value}%"></div></div>
+            </button>`;
+        }).join('');
+    },
+
+    // Economic Pressure v1 (Stage D1): 5 cost-of-living indices, each derived from real
+    // production/trade/unemployment/industry-mix signals (engine.getCostOfLivingTarget()), not a
+    // fixed 0-100 buildup like the Early Warning pressures above -- centered at 50, so "good" here
+    // means below 50 (cheaper than the neutral baseline), not just "low".
+    renderCostOfLivingPanel() {
+        const cont = document.getElementById('cost-of-living-panel'); if (!cont) return;
+        cont.innerHTML = Data.COST_OF_LIVING_CATEGORIES.map(cat => {
+            const meta = Data.COST_OF_LIVING_META[cat];
+            const value = state.world.costOfLiving?.[cat] ?? 50;
+            const historyKey = "cost" + cat.charAt(0).toUpperCase() + cat.slice(1);
+            const label = value > 65 ? "แพงมาก" : value > 55 ? "แพงขึ้น" : value < 35 ? "ถูกมาก" : value < 45 ? "ถูกลง" : "ปกติ";
+            const textColor = value > 55 ? "text-red-700" : value < 45 ? "text-emerald-700" : "text-stone-600";
+            const barColor = value > 55 ? "bg-red-600" : value < 45 ? "bg-emerald-600" : "bg-stone-500";
+            return `
+            <button onclick="ui.showWhy('${meta.label}', engine.getCostOfLivingBreakdown('${cat}'), -1)" class="w-full text-left border-2 border-black p-2.5 hover:bg-stone-50 transition">
+                <div class="flex justify-between items-center text-[10px] mb-1">
+                    <span class="font-bold"><i class="fas ${meta.icon} mr-1"></i>${meta.label} ${this.trendArrow(historyKey, -1)}</span>
+                    <span class="font-bold ${textColor}">${label} &middot; ${value.toFixed(0)}</span>
                 </div>
                 <div class="w-full h-1.5 bg-stone-200 border border-black"><div class="h-full ${barColor}" style="width:${value}%"></div></div>
             </button>`;
