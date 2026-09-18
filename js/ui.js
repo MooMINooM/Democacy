@@ -722,7 +722,7 @@ export const ui = {
                 <div class="w-8 h-8 bg-stone-100 border border-stone-300 flex items-center justify-center text-stone-400"><i class="fas fa-user"></i></div>
                 <div class="min-w-0">
                     <div class="font-bold text-sm truncate text-black leading-tight">${l.name}</div>
-                    <div class="text-[9px] text-stone-500 truncate uppercase tracking-wider">${trait.socio?.name || '-'}</div>
+                    <div class="text-[9px] text-stone-500 truncate uppercase tracking-wider">${trait.socio?.name || '-'}${l.province ? ` &middot; ${l.province}` : ''}</div>
                 </div>
             </div>
 
@@ -772,6 +772,7 @@ export const ui = {
                     <h2 class="text-2xl font-black uppercase leading-none mb-1">${l.name}</h2>
                     <div class="text-xs font-bold bg-black text-white px-2 py-0.5 mb-4">${l.party.name}</div>
                     <div class="w-full text-left space-y-2 border-t-2 border-black pt-4">
+                        ${l.province ? `<div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>เขตเลือกตั้ง</span><span class="font-bold">${l.province}</span></div>` : ''}
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Status</span><span class="font-bold">${l.status}</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Wealth</span><span class="font-bold font-mono">฿${(l.cash/1e6).toFixed(1)}M</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>ชื่อเสียง (Prestige)</span><span class="font-bold ${l.prestige > 60 ? 'text-amber-700' : 'text-stone-700'}">${l.prestige}%</span></div>
