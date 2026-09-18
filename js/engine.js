@@ -147,14 +147,28 @@ function getProvinceContext(prov) {
     const laborCondition = state.world.unemployment < 15 ? "Shortage" : state.world.unemployment < 25 ? "Balanced" : "Surplus";
     return { growthStage, laborCondition };
 }
-// Political Actors (Phase 3): an MP's own base (mp.status faction) turning against them, close
-// enough to an election to matter, is what "seat security" means without a per-MP constituency
-// in this data model -- reusing the same faction link runVote() already scores against.
+// Seat Security (Stage B2): now that every MP carries a real province (Stage B1), this reads
+// that constituency directly -- its own base faction's approval, and whether it's actually
+// under- or well-invested -- instead of leaning on mp.status (the MP's personal faction
+// alignment, not their electorate's) as a stand-in for the whole area.
 function getMPElectoralRisk(mp) {
     const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
     if (daysToElection > 180) return "Safe";
-    const statusApproval = state.factions.find(f => f.name === mp.status)?.approval ?? 50;
-    return statusApproval < 40 ? "AtRisk" : statusApproval < 55 ? "Competitive" : "Safe";
+    const prov = state.provinces.find(p => p.name === mp.province);
+    if (!prov) {
+        // Fallback for an MP with no province on record -- shouldn't happen after Stage B1, but
+        // the old faction-approval-only read stays as a safety net rather than crashing.
+        const statusApproval = state.factions.find(f => f.name === mp.status)?.approval ?? 50;
+        return statusApproval < 40 ? "AtRisk" : statusApproval < 55 ? "Competitive" : "Safe";
+    }
+    const baseApproval = state.factions.find(f => f.name === prov.baseFaction)?.approval ?? 50;
+    // A neglected home province hurts a government MP specifically -- the same asymmetry
+    // runProvinceElection()'s govBonus term already scores at election time (investment only
+    // swings the vote for whoever's in government); an opposition MP isn't defending a spending
+    // record there, so their risk reads off local sentiment alone.
+    const investmentRisk = mp.party.status === "Government" ? (50 - (prov.investmentLevel ?? 50)) : 0;
+    const score = baseApproval - investmentRisk * 0.6;
+    return score < 40 ? "AtRisk" : score < 55 ? "Competitive" : "Safe";
 }
 
 // Explainability (Phase 2): the same breakdown the formula itself used, handed back out so the

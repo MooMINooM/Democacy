@@ -777,7 +777,23 @@ export const ui = {
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Wealth</span><span class="font-bold font-mono">฿${(l.cash/1e6).toFixed(1)}M</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>ชื่อเสียง (Prestige)</span><span class="font-bold ${l.prestige > 60 ? 'text-amber-700' : 'text-stone-700'}">${l.prestige}%</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>ความทะเยอทะยาน (Ambition)</span><span class="font-bold ${(l.ambition ?? 50) > 60 ? 'text-purple-700' : 'text-stone-700'}">${l.ambition ?? 50}%</span></div>
-                        ${(() => { const risk = engine.getMPElectoralRisk(l); const RISK_LABELS = { AtRisk: ["เสี่ยงแพ้เขต", "text-red-700"], Competitive: ["แข่งขันสูง", "text-amber-700"], Safe: ["ที่นั่งมั่นคง", "text-emerald-700"] }; return `<div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>สถานะการเลือกตั้ง</span><span class="font-bold ${RISK_LABELS[risk][1]}">${RISK_LABELS[risk][0]}</span></div>`; })()}
+                        ${(() => {
+                            const risk = engine.getMPElectoralRisk(l);
+                            const RISK_LABELS = { AtRisk: ["เสี่ยงแพ้เขต", "text-red-700"], Competitive: ["แข่งขันสูง", "text-amber-700"], Safe: ["ที่นั่งมั่นคง", "text-emerald-700"] };
+                            const row = `<div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>สถานะการเลือกตั้ง</span><span class="font-bold ${RISK_LABELS[risk][1]}">${RISK_LABELS[risk][0]}</span></div>`;
+                            // Seat Security (Stage B2): a one-line reason straight from the same
+                            // inputs getMPElectoralRisk() itself reads, so an AtRisk/Competitive
+                            // badge doesn't just assert a claim -- the province and the local base's
+                            // mood are what actually decide it now, not the MP's own faction alone.
+                            if (risk === "Safe" || !l.province) return row;
+                            const prov = state.provinces.find(p => p.name === l.province);
+                            const baseApproval = state.factions.find(f => f.name === prov?.baseFaction)?.approval ?? 50;
+                            const reasons = [];
+                            if (baseApproval < 45) reasons.push(`ฐานเสียง${prov.baseFaction}ในพื้นที่ไม่พอใจ (${baseApproval.toFixed(0)}%)`);
+                            if (l.party.status === "Government" && (prov.investmentLevel ?? 50) < 45) reasons.push(`จังหวัดลงทุนต่ำ (${(prov.investmentLevel ?? 50).toFixed(0)}%)`);
+                            const note = reasons.length > 0 ? `<div class="text-[9px] text-stone-500 -mt-1 mb-1">${reasons.join(' · ')}</div>` : '';
+                            return row + note;
+                        })()}
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Loyalty</span><span class="font-bold ${l.loyalty > 50 ? 'text-green-700':'text-red-700'}">${l.loyalty.toFixed(0)}%</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Conviction</span><span class="font-bold ${l.conviction > 85 ? 'text-red-700':'text-stone-700'}">${l.conviction}%${l.conviction > 85 ? ' (ย้ายพรรคไม่ได้)' : ''}</span></div>
                         <div class="flex justify-between text-xs border-b border-stone-300 pb-1"><span>Trust (ท่าน)</span><span class="font-bold ${l.trust > 60 ? 'text-green-700' : (l.trust < 35 ? 'text-red-700' : 'text-stone-700')}">${l.trust.toFixed(0)}%${l.switchCooldown > 0 ? ` (จำเรื่องเดิมอีก ${Math.ceil(l.switchCooldown)} วัน)` : ''}</span></div>
