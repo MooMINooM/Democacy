@@ -167,6 +167,25 @@ function getProvinceVoteShare(prov) {
     const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
     return weights.map(w => ({ party: w.party, share: (w.weight / totalWeight) * 100 })).sort((a, b) => b.share - a.share);
 }
+// Better Why System (Stage D4): "ทำไมจังหวัดเสียฐานเสียง" -- showProvinceDetail() showed the
+// leaning/competitiveness result of the formula above but never the terms that actually produced
+// it. Same weight terms, for one named party, as signed contributions instead of a single number.
+function getProvinceVoteShareBreakdown(provOrName, partyId) {
+    // Same object-or-name flexibility as getEffectivenessBreakdown()/getFactionApprovalBreakdown()
+    // -- a UI onclick only ever has the province's name to pass through global scope.
+    const prov = typeof provOrName === 'string' ? state.provinces.find(x => x.name === provOrName) : provOrName;
+    if (!prov) return {};
+    const party = state.parties.find(p => p.id === partyId);
+    if (!party) return {};
+    const affinity = Data.FACTION_IDEOLOGY_AFFINITY[prov.baseFaction];
+    const investmentSwing = ((prov.investmentLevel ?? 50) - 50) * 0.5;
+    const terms = { "ความนิยมพรรคโดยรวม": party.popularity };
+    if (affinity && party.ideologies.includes(affinity)) terms[`อุดมการณ์ตรงกับฐานเสียง${prov.baseFaction}`] = 25;
+    if (party.status === "Government") terms["ระดับการลงทุนในจังหวัด"] = investmentSwing;
+    if (party.id === state.player.party.id && (prov.playerCampaignBoost || 0) > 0) terms["คะแนนหาเสียงสะสม"] = prov.playerCampaignBoost;
+    terms["ชื่อเสียงระยะยาวของพรรค"] = ((party.legacyTrust ?? 60) - 60) * 0.4;
+    return terms;
+}
 // Province Political Layer (Stage B3): a province is a source of decisions, not just a place to
 // click invest -- government/opposition support (from the vote-share preview above),
 // competitiveness, which national pressure this province's own industry actually feels worst
@@ -365,6 +384,31 @@ function getApprovalBreakdown() {
         .forEach(f => { rows[f.name] = f.approval - 50; });
     return rows;
 }
+// Better Why System (Stage D4): renderFactionList() only ever showed a faction's recent POLICY
+// modifiers (f.modifiers), never the ongoing structural drivers that move its approval every
+// single tick -- growth, unemployment/environment, and Stage D1's cost-of-living sensitivity were
+// all completely invisible to the player. Pulled out of tick()'s faction loop into this one shared
+// function (tick() now calls it too, below) instead of a second copy of the same math, the same
+// discipline getCostOfLivingTarget()/getCostOfLivingBreakdown() already established -- two
+// formulas computing the same thing are two formulas that can quietly drift apart.
+function getFactionApprovalBreakdown(fOrName) {
+    // Same object-or-name flexibility as getEffectivenessBreakdown() -- tick() already has the
+    // real faction object on hand, but a UI onclick (global scope, no closures) only has a name.
+    const f = typeof fOrName === 'string' ? state.factions.find(x => x.name === fOrName) : fOrName;
+    if (!f) return {};
+    const terms = {};
+    terms["ภาวะเศรษฐกิจโดยรวม (Growth)"] = (state.world.growth / 10) * (f.wealth / 100) * 0.08;
+    if (f.name === "สิ่งแวดล้อม") terms["สภาพแวดล้อมของประเทศ"] = (state.world.environment - 55) * 0.03;
+    if (f.name === "คนว่างงาน" || f.name === "แรงงาน") terms["อัตราการว่างงาน"] = -(state.world.unemployment - 20) * 0.03;
+    const sensitivity = Data.COST_OF_LIVING_SENSITIVITY[f.name];
+    if (sensitivity) {
+        let costBias = 0;
+        Object.entries(sensitivity).forEach(([cat, weight]) => { costBias -= ((state.world.costOfLiving?.[cat] ?? 50) - 50) * weight * 0.006; });
+        terms["ค่าครองชีพที่กลุ่มนี้เจอ"] = costBias;
+    }
+    terms["แนวโน้มกลับสู่ปกติ"] = (50 - f.approval) * 0.01;
+    return terms;
+}
 function getGrowthBreakdown() { return state.world.growthBreakdown || {}; }
 function getCabinetStabilityBreakdown() { return state.world.cabinetStabilityBreakdown || {}; }
 
@@ -486,6 +530,25 @@ function getImplementationEffectiveness(p) {
 
     const effectiveness = Math.max(0.2, capacityMultiplier * fitMultiplier * budgetMultiplier);
     return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload };
+}
+// Better Why System (Stage D4): "ทำไม policy effectiveness ต่ำ" -- getImplementationEffectiveness()
+// above already computes the real three multipliers, but only fitLabel (one of the three) ever
+// reached the player, as plain text with no numbers. Effectiveness is a PRODUCT of these three,
+// not a sum, so showWhy()'s ranked-list display can't literally add up to it -- each term here is
+// that factor's own % deviation from "full effectiveness" (1.0), which stays additive-compatible
+// for display while still being read directly off the real multiplier, not invented after the fact.
+function getEffectivenessBreakdown(pOrName) {
+    // Accepts either the policy object directly or its name -- UI onclick handlers run in global
+    // scope where only window.engine/window.ui are exposed (not Data), so a why-button that needs
+    // to look a template up by name has to do it in here, where Data is a normal module import.
+    const p = typeof pOrName === 'string' ? Data.POLICY_TEMPLATES.find(t => t.name === pOrName) : pOrName;
+    if (!p) return {};
+    const { capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload } = getImplementationEffectiveness(p);
+    return {
+        [`ภาระงานกระทรวง (${workload.toFixed(0)}%)`]: (capacityMultiplier - 1) * 100,
+        [fitLabel]: (fitMultiplier - 1) * 100,
+        "สถานะการคลังของประเทศ": (budgetMultiplier - 1) * 100
+    };
 }
 
 // Faction Response v2 (Stage D2): a faction used to feel a policy's impact.<factionName> exactly
@@ -875,52 +938,11 @@ export const gameClock = {
         state.factions.forEach(f => {
             (f.modifiers || []).forEach(m => { f.approval = Math.max(0, Math.min(100, f.approval + m.perDay * state.speed)); m.remaining -= state.speed; });
             f.modifiers = (f.modifiers || []).filter(m => m.remaining > 0);
-            // Wealthier/more capital-exposed factions feel national growth (or a recession) more
-            // directly, day to day. Coefficient was originally 0.3 -- computeGrowth() reads these
-            // same factions' approval straight back via weightedApproval (below), a two-way
-            // coupling that turned out to have no damping: pre-existing, found while testing
-            // Stage D's own new faction-approval channel by watching growth/approval over a full
-            // ~13-year calm-baseline run (longer than any prior stage had actually checked) --
-            // growth crashed from near 0 to -9.99% within ~7 years and EVERY faction pinned at
-            // 0% approval, with no recovery for the rest of the run, entirely reproducible with
-            // zero Stage D code present. Cut here and in computeGrowth()'s weightedApproval
-            // coefficient below, the same ~75% reduction pattern the Phase 5 unemployment and
-            // Stage C1 economicCrisisPressure feedback fixes both needed.
-            const growthBias = (state.world.growth / 10) * (f.wealth / 100) * 0.08;
-            // The unemployment/environment indices ripple into the factions they hit hardest
-            let statBias = 0;
-            if (f.name === "สิ่งแวดล้อม") statBias += (state.world.environment - 55) * 0.03;
-            if (f.name === "คนว่างงาน" || f.name === "แรงงาน") statBias -= (state.world.unemployment - 20) * 0.03;
-            // Economic Pressure v1 (Stage D1): the roadmap's own example -- rising food cost hits
-            // labor/farmers differently, rising housing cost hits middle class/youth harder --
-            // via COST_OF_LIVING_SENSITIVITY's per-faction weights per category. A negative
-            // weight (เกษตรกร on food) means that faction actually benefits when the index rises.
-            // Coefficient was originally 0.02 -- with 8 of the 9 weighted factions hurt by a
-            // rising index and only เกษตรกร ever gaining, a calm-baseline run showed this
-            // systematically dragging weightedApproval down, which fed into computeGrowth() and
-            // back into approval via the existing growthBias term below: growth got stuck at
-            // -6% to -9.5% and laborApproval pinned at 0 for the full 30-year run, never
-            // recovering (this was on top of the cost targets themselves settling structurally
-            // above 50 from a separate bug, since fixed in getCostOfLivingBreakdown() --
-            // costBaselineShares). Cut to 0.006, the same ~70% reduction the Phase 5 unemployment
-            // feedback and Stage C1 economicCrisisPressure fixes both needed.
-            let costBias = 0;
-            const sensitivity = Data.COST_OF_LIVING_SENSITIVITY[f.name];
-            if (sensitivity) {
-                Object.entries(sensitivity).forEach(([cat, weight]) => {
-                    costBias -= (state.world.costOfLiving[cat] - 50) * weight * 0.006;
-                });
-            }
-            // Political normalcy: every other drifting value in the game (MP trust, party trust,
-            // WORLD_STAT_META stats) pulls back toward a baseline over time -- faction approval
-            // never did, so once growthBias/statBias/costBias pushed a faction to the 0 or 100
-            // floor/ceiling, nothing ever pulled it back, and it stayed there for the rest of a
-            // calm-baseline run (confirmed directly: this still happened with costBias forced to
-            // 0, so it isn't specific to Stage D's new term -- growthBias alone was enough).
-            // Gentle on purpose (0.01, versus trust's 0.1) -- this should stop permanent lock-in
-            // at an extreme, not erase genuine sustained dissatisfaction or genuine enthusiasm.
-            const normalcyPull = (50 - f.approval) * 0.01;
-            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + growthBias * state.speed + statBias * state.speed + costBias * state.speed + normalcyPull * state.speed));
+            // Growth<->approval coupling history (why growthBias was cut 0.3->0.08, costBias
+            // 0.02->0.006, and normalcyPull added) is now on getFactionApprovalBreakdown() (Stage
+            // D4) -- the single shared formula this loop and the faction-list why-button both use.
+            const bias = Object.values(getFactionApprovalBreakdown(f)).reduce((s, v) => s + v, 0);
+            f.approval = Math.max(0, Math.min(100, f.approval + (Math.random() - 0.5) * 1.5 + bias * state.speed));
         });
 
         state.foreign.forEach(c => {
@@ -974,7 +996,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvinceVoteShare, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getFactionApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvinceVoteShare, getProvinceVoteShareBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier, getEffectivenessBreakdown,
 
     init() {
         state.voteModifier = null;
@@ -2096,10 +2118,15 @@ export const engine = {
         const quidProQuoChance = 0.3 + (avgDependence / 100) * 0.3;
         if (p.proposer === "รัฐบาล" && Math.random() < quidProQuoChance) {
             if (coalitions.length > 0) {
-                const badActor = coalitions[Math.floor(Math.random() * coalitions.length)];
+                // Better Why System (Stage D4): "ทำไมพรรคร่วมเรียกร้องเพิ่ม" -- used to pick a
+                // coalition partner uniformly at random, so there was never a real reason to show
+                // for WHY that specific partner came asking. Now it's whichever partner actually
+                // has the highest dependence (the same field driving quidProQuoChance above), so
+                // showQuidProQuo() has a genuine number to point to.
+                const badActor = [...coalitions].sort((a, b) => (b.dependence || 0) - (a.dependence || 0))[0];
                 const demands = Data.POLICY_TEMPLATES.filter(t => t.ministry === "การคลัง" || t.ministry === "คมนาคม");
                 if (demands.length > 0) {
-                     ui.showQuidProQuo(p, demands[0], badActor); return;
+                     ui.showQuidProQuo(p, demands[0], badActor, { avgDependence, quidProQuoChance }); return;
                 }
             }
         }
@@ -2176,12 +2203,22 @@ export const engine = {
             if (mp.isCobra) { if(mp.party.status === "Government") voteAgainstParty = false; if(mp.party.status === "Opposition") voteAgainstParty = true; }
 
             let finalVote = "abstain";
-            if(mp.party.status === "Government") { if (voteAgainstParty) finalVote = "no"; else { if(score > 50) finalVote = "yes"; else finalVote = "no"; } } 
-            else if (mp.party.status === "Opposition") { if (voteAgainstParty) finalVote = "yes"; else finalVote = "no"; } 
+            if(mp.party.status === "Government") { if (voteAgainstParty) finalVote = "no"; else { if(score > 50) finalVote = "yes"; else finalVote = "no"; } }
+            else if (mp.party.status === "Opposition") { if (voteAgainstParty) finalVote = "yes"; else finalVote = "no"; }
             else { if (score > 50) finalVote = "yes"; else finalVote = "no"; }
 
+            // Better Why System (Stage D4): "ทำไม MP โหวตค้าน" -- every condition that actually
+            // fed voteAgainstParty's roll above, named with the MP's own real numbers, captured
+            // here (not re-derived later from possibly-changed live state) so the why-modal shows
+            // exactly what decided this specific historical vote.
+            const rebelReasons = [];
+            if (mp.loyalty < 30) rebelReasons.push(`ความภักดีต่อพรรคต่ำ (${mp.loyalty.toFixed(0)}%)`);
+            if (mp.isCobra) rebelReasons.push("เป็นงูเห่า (ผูกมัดลับไว้กับอีกฝ่าย)");
+            if (personalConflict) rebelReasons.push(`อุดมการณ์ส่วนตัว (${mp.trait.ideology}) ขัดกับร่างนี้ (${p.ideology})`);
+            if (issueMatch && impactOnOwnBase < -15) rebelReasons.push(`ร่างนี้กระทบฐานเสียงของตัวเอง (${mp.status}) หนัก (${impactOnOwnBase})`);
+
             state.lastVoteResults.push({ id: mp.id, vote: finalVote, isRebel: voteAgainstParty });
-            state.lastVoteLog.push({ name: mp.name, party: mp.party.name, color: mp.party.color, vote: finalVote, isCobra: mp.isCobra, isRebel: voteAgainstParty });
+            state.lastVoteLog.push({ name: mp.name, party: mp.party.name, color: mp.party.color, vote: finalVote, isCobra: mp.isCobra, isRebel: voteAgainstParty, score: Math.round(score), rebelReasons });
 
             if (finalVote === "yes") yes++; else no++;
         });
