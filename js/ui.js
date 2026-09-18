@@ -128,6 +128,7 @@ export const ui = {
         this.renderContextPanel();
         this.renderEconomyPanel();
         this.renderSocietyPanel();
+        this.renderEarlyWarningPanel();
         this.renderBattlegroundPanel();
     },
 
@@ -231,6 +232,34 @@ export const ui = {
                 <div class="flex justify-between text-[9px] text-stone-500 mt-0.5"><span>รัฐบาล ${b.govSupport.toFixed(0)}%</span><span>ฝ่ายค้าน ${b.oppSupport.toFixed(0)}%</span></div>
             </button>
         `).join('');
+    },
+
+    // Early Warning System (Stage C2): all four pressures (Stage C1) on one board with a
+    // trend arrow and a Low/Elevated/High/Critical risk read, each with its own why-button --
+    // so a crisis, when it comes, is something the player already saw building, not a bolt from
+    // the blue. goodDirection is always -1: every one of these is a risk gauge, rising is bad.
+    renderEarlyWarningPanel() {
+        const cont = document.getElementById('early-warning-panel'); if (!cont) return;
+        const PRESSURES = [
+            { key: 'protestPressure', label: 'แรงกดดันประท้วง', icon: 'fa-people-group', breakdownFn: 'getPressureBreakdown' },
+            { key: 'coalitionCollapsePressure', label: 'ความเสี่ยงพรรคร่วมแตก', icon: 'fa-handshake-slash', breakdownFn: 'getCoalitionCollapseBreakdown' },
+            { key: 'economicCrisisPressure', label: 'ความเสี่ยงวิกฤตเศรษฐกิจ', icon: 'fa-money-bill-trend-down', breakdownFn: 'getEconomicCrisisBreakdown' },
+            { key: 'coupPressure', label: 'ความเสี่ยงรัฐประหาร', icon: 'fa-shield-halved', breakdownFn: 'getCoupBreakdown' }
+        ];
+        const RISK_LABELS = { Low: ["ต่ำ", "text-emerald-700", "bg-emerald-600"], Elevated: ["เริ่มสูง", "text-amber-700", "bg-amber-500"], High: ["สูง", "text-red-700", "bg-red-600"], Critical: ["วิกฤต", "text-red-900", "bg-red-900"] };
+        cont.innerHTML = PRESSURES.map(p => {
+            const value = state.world[p.key] ?? 0;
+            const level = value > 75 ? "Critical" : value > 50 ? "High" : value > 25 ? "Elevated" : "Low";
+            const [levelLabel, textColor, barColor] = RISK_LABELS[level];
+            return `
+            <button onclick="ui.showWhy('${p.label}', engine.${p.breakdownFn}(), -1)" class="w-full text-left border-2 border-black p-2.5 hover:bg-stone-50 transition">
+                <div class="flex justify-between items-center text-[10px] mb-1">
+                    <span class="font-bold"><i class="fas ${p.icon} mr-1"></i>${p.label} ${this.trendArrow(p.key, -1)}</span>
+                    <span class="font-bold ${textColor}">${levelLabel} &middot; ${value.toFixed(0)}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-stone-200 border border-black"><div class="h-full ${barColor}" style="width:${value}%"></div></div>
+            </button>`;
+        }).join('');
     },
 
     renderNationalStats() {

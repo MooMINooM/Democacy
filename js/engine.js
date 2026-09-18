@@ -246,6 +246,46 @@ function getPressureBreakdown() {
         "ความโปร่งใสต่ำ": Math.max(0, (100 - state.world.transparency) * 0.3)
     };
 }
+// Event Pressure Framework (Stage C1): protestPressure's own pattern (a real, visible, structural
+// buildup instead of a blind dice roll) extended to the other three trigger checks that used to
+// be flat/gated random -- triggerNoConfidence(), triggerCrisis()'s Economic branch, and
+// triggerCoup(). Random still decides *when* within tick(), but now scaled by how much these
+// pressures have actually built up, the same relationship protestPressure->triggerCrisis() already had.
+function getCoalitionCollapseBreakdown() {
+    const coalitionParties = state.parties.filter(p => p.status === "Government" && p.id !== state.player.party.id);
+    const avgCoalitionTrust = coalitionParties.length > 0 ? coalitionParties.reduce((s, p) => s + (p.trust ?? 70), 0) / coalitionParties.length : 100;
+    return {
+        "พรรคร่วมรัฐบาลไม่ไว้ใจ": Math.max(0, (70 - avgCoalitionTrust) * 1.2),
+        "เสถียรภาพคณะรัฐมนตรีต่ำ": Math.max(0, (50 - state.world.cabinetStability) * 0.8),
+        "ความนิยมรัฐบาลต่ำ": Math.max(0, (40 - state.world.approval) * 0.6)
+    };
+}
+function getEconomicCrisisBreakdown() {
+    const fiscal = getNationalContext().fiscalCondition;
+    const fiscalStrain = fiscal === "Debt Stress" ? 30 : fiscal === "Tight" ? 15 : 0;
+    // The growth term's coefficient was originally 8 (borrowed from growth's own productionBias
+    // scale) -- calm-baseline testing caught a real feedback spiral it created: an Economic
+    // crisis sets growthPenalty (up to 15), which drags growth down once the month rolls over,
+    // which fed straight back into this same pressure at 8x, re-triggering another Economic
+    // crisis before growthPenalty had time to decay. Cut to 1.5 (an ~80% reduction, the same
+    // scale of cut the Phase 5 employment-feedback fix needed for the same reason) so a crisis's
+    // own aftermath doesn't relaunch the pressure that caused it.
+    return {
+        "เศรษฐกิจหดตัว": Math.max(0, -state.world.growth * 1.5),
+        "การว่างงานสูง": Math.max(0, (state.world.unemployment - 20) * 1.2),
+        "สถานะการคลังตึงตัว": fiscalStrain
+    };
+}
+function getCoupBreakdown() {
+    const army = state.factions.find(f => f.name === "กองทัพ");
+    const armyApproval = army ? army.approval : 50;
+    return {
+        "ความโปร่งใสต่ำ": Math.max(0, (40 - state.world.transparency) * 0.8),
+        "กองทัพไม่พอใจ": Math.max(0, (50 - armyApproval) * 0.6),
+        "เสถียรภาพคณะรัฐมนตรีต่ำ": Math.max(0, (40 - state.world.cabinetStability) * 0.5),
+        "แรงกดดันประท้วงสูง": Math.max(0, (state.world.protestPressure - 50) * 0.3)
+    };
+}
 function getApprovalBreakdown() {
     const rows = {};
     [...state.factions].sort((a, b) => Math.abs(b.approval - 50) - Math.abs(a.approval - 50)).slice(0, 5)
@@ -483,20 +523,57 @@ export const gameClock = {
         ));
         state.world.protestPressure = Math.max(0, Math.min(100, state.world.protestPressure + (targetPressure - state.world.protestPressure) * 0.05 * state.speed));
 
+        // Event Pressure Framework (Stage C1): the same structural-buildup treatment for the
+        // three other trigger checks below, which used to be a flat or hard-gated random roll.
+        const coalitionParties = state.parties.filter(p => p.status === "Government" && p.id !== state.player.party.id);
+        const avgCoalitionTrust = coalitionParties.length > 0 ? coalitionParties.reduce((s, p) => s + (p.trust ?? 70), 0) / coalitionParties.length : 100;
+        const targetCollapsePressure = Math.max(0, Math.min(100,
+            (70 - avgCoalitionTrust) * 1.2 +
+            (50 - state.world.cabinetStability) * 0.8 +
+            (40 - state.world.approval) * 0.6
+        ));
+        state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, state.world.coalitionCollapsePressure + (targetCollapsePressure - state.world.coalitionCollapsePressure) * 0.05 * state.speed));
+
+        const fiscal = getNationalContext().fiscalCondition;
+        const fiscalStrain = fiscal === "Debt Stress" ? 30 : fiscal === "Tight" ? 15 : 0;
+        const targetEconomicPressure = Math.max(0, Math.min(100,
+            Math.max(0, -state.world.growth) * 1.5 +
+            (state.world.unemployment - 20) * 1.2 +
+            fiscalStrain
+        ));
+        state.world.economicCrisisPressure = Math.max(0, Math.min(100, state.world.economicCrisisPressure + (targetEconomicPressure - state.world.economicCrisisPressure) * 0.05 * state.speed));
+
+        const army = state.factions.find(f => f.name === "กองทัพ");
+        const armyApproval = army ? army.approval : 50;
+        const targetCoupPressure = Math.max(0, Math.min(100,
+            (40 - state.world.transparency) * 0.8 +
+            (50 - armyApproval) * 0.6 +
+            (40 - state.world.cabinetStability) * 0.5 +
+            (state.world.protestPressure - 50) * 0.3
+        ));
+        state.world.coupPressure = Math.max(0, Math.min(100, state.world.coupPressure + (targetCoupPressure - state.world.coupPressure) * 0.05 * state.speed));
+
         if(crossedDayOfMonth(prevDate, state.date, 15) && Math.random() < 0.1) engine.aiPropose();
-        if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
-           if(Math.random() < 0.05) engine.triggerNoConfidence();
+        // Coalition Collapse Pressure now gates and scales this instead of a flat 0.05 roll behind
+        // a hard approval/stability AND-gate -- a floor of 20 keeps ordinary governing from ever
+        // rolling at all, same effective floor the old gate provided. player.position is just the
+        // title chosen at setup and never changes after an ouster, so a no-confidence motion
+        // against a player no longer actually governing needs the live party.status too -- a
+        // pre-existing gap from before this pressure framework, surfaced by testing this check
+        // firing far more often than intended once coalitionCollapsePressure genuinely rewards checking.
+        if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && state.player.party.status === "Government" && state.world.coalitionCollapsePressure > 20) {
+           if(Math.random() < (state.world.coalitionCollapsePressure / 100) * 0.3) engine.triggerNoConfidence();
         }
         // tick() fires once per real second regardless of state.speed, but each tick now covers
         // `state.speed` in-game days -- so every random-event check below is scaled by state.speed
         // too, or a player idling at 3x would silently see ~3x fewer crises/incidents per in-game
-        // year than one at 1x, purely as a side effect of the speed toggle. The crisis roll also
-        // now reads protestPressure: pressure changes the odds, not just the aftermath.
-        if(Math.random() < (0.01 + (state.world.protestPressure / 100) * 0.03) * state.speed) engine.triggerCrisis();
-        if(state.world.transparency < 40 && Math.random() < 0.05 * state.speed) {
-             const army = state.factions.find(f => f.name === "กองทัพ");
-             if(army && army.approval < 50) engine.triggerCoup();
-        }
+        // year than one at 1x, purely as a side effect of the speed toggle. The crisis roll now
+        // reads whichever of protest/economic pressure is higher: either building up is enough to
+        // make *a* crisis likely, and triggerCrisis() itself picks the type from their relative share.
+        if(Math.random() < (0.01 + (Math.max(state.world.protestPressure, state.world.economicCrisisPressure) / 100) * 0.03) * state.speed) engine.triggerCrisis();
+        // Coup Pressure replaces the old hard transparency<40 AND army<50 gate -- both terms
+        // already feed the pressure itself, continuously, instead of an all-or-nothing switch.
+        if(Math.random() < (state.world.coupPressure / 100) * 0.015 * state.speed) engine.triggerCoup();
         
         // The 5 policy-driven national stats: apply/decay their modifiers, then drift back
         // toward baseline like faction/party trust does, so a policy's effect fades unless renewed.
@@ -581,7 +658,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown,
 
     init() {
         state.voteModifier = null;
@@ -635,13 +712,18 @@ export const engine = {
         state.world.growthBreakdown = growthBreakdown;
         const openingPressureBreakdown = getPressureBreakdown();
         state.world.protestPressure = Math.max(0, Math.min(100, Object.values(openingPressureBreakdown).reduce((s, v) => s + v, 0)));
+        // Event Pressure Framework (Stage C1): same day-one treatment for the other three
+        // pressures -- computed from the real formula instead of the flat 0 placeholder.
+        state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, Object.values(getCoalitionCollapseBreakdown()).reduce((s, v) => s + v, 0)));
+        state.world.economicCrisisPressure = Math.max(0, Math.min(100, Object.values(getEconomicCrisisBreakdown()).reduce((s, v) => s + v, 0)));
+        state.world.coupPressure = Math.max(0, Math.min(100, Object.values(getCoupBreakdown()).reduce((s, v) => s + v, 0)));
 
         ui.renderCabinet(); ui.renderMinistryList();
         this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
         // A real baseline for every trend arrow and why-breakdown from the very first render,
         // instead of an empty history that would only start showing a trend a month in.
         for(let i=0; i<6; i++) { state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget); }
-        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
+        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure"].forEach(key => {
             state.history[key] = [];
             for (let i = 0; i < 6; i++) state.history[key].push(state.world[key]);
         });
@@ -933,7 +1015,7 @@ export const engine = {
         // *before* their own recompute above, so their trend arrow was permanently a month stale.
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
         if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
-        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
+        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure"].forEach(key => {
             if (!state.history[key]) state.history[key] = [];
             state.history[key].push(state.world[key]);
             if (state.history[key].length > 6) state.history[key].shift();
@@ -1033,17 +1115,22 @@ export const engine = {
     },
 
     triggerCrisis() {
-        // Which kind of crisis fires is itself context-read now: high protestPressure biases
-        // toward Protest, not a flat coin flip -- the buildup the player already saw explains
-        // which crisis showed up, instead of it looking arbitrary.
-        const protestChance = 0.3 + (state.world.protestPressure / 100) * 0.5;
-        const type = Math.random() < protestChance ? "Protest" : "Economic";
+        // Event Pressure Framework (Stage C1): which kind of crisis fires now reads both
+        // pressures' relative share instead of protestPressure alone deciding against a flat
+        // 30-80% band -- if economicCrisisPressure has genuinely built up higher than
+        // protestPressure, Economic is the more likely (not just possible) outcome.
+        const totalPressure = state.world.protestPressure + state.world.economicCrisisPressure;
+        const protestShare = totalPressure > 1 ? state.world.protestPressure / totalPressure : 0.5;
+        const type = Math.random() < protestShare ? "Protest" : "Economic";
         if (type === "Economic") {
             // Mirrors the Protest branch's stabilityPenalty: a temporary, decaying drag (via
             // tick()'s growthPenalty decay) instead of a permanent subtraction, so repeated
             // crises fade over a couple of weeks like everything else in the game instead of
             // requiring the monthly growth blend alone to claw them back.
             state.world.growthPenalty = Math.min(15, (state.world.growthPenalty || 0) + 2.5);
+            // Same venting the Protest branch already does for protestPressure -- the crisis
+            // itself lets off some of the pressure that built up to cause it.
+            state.world.economicCrisisPressure = Math.max(0, state.world.economicCrisisPressure - 35);
             this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง");
         } else {
             state.world.stabilityPenalty = Math.min(50, (state.world.stabilityPenalty || 0) + 15);
@@ -1400,6 +1487,9 @@ export const engine = {
         });
         document.getElementById('vote-count-yes').innerText = yes; document.getElementById('vote-count-no').innerText = no;
         const ousted = yes > Data.MAJORITY_SEATS;
+        // Same venting triggerCrisis() does for whichever pressure caused it -- resolved either
+        // way, so it doesn't sit maxed out and immediately re-roll next month.
+        state.world.coalitionCollapsePressure = ousted ? 0 : Math.max(0, state.world.coalitionCollapsePressure - 40);
         // Long Campaign (Phase 7): being ousted mid-term used to end the game (location.reload()).
         // Now the PM's own party is forced into Opposition -- seats don't change, so letting
         // assignGovernmentStatus() run on the full list would just hand government straight back
