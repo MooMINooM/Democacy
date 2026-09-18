@@ -158,7 +158,11 @@ function getProvinceVoteShare(prov) {
         const bonus = affinity && p.ideologies.includes(affinity) ? 25 : 0;
         const govBonus = p.status === "Government" ? investmentSwing : 0;
         const campaignBonus = p.id === state.player.party.id ? (prov.playerCampaignBoost || 0) : 0;
-        return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + campaignBonus) };
+        // Long-term Political Memory (Stage D3): same legacyBonus term runProvinceElection()
+        // itself uses, kept in sync deliberately -- otherwise this preview would show a
+        // different picture than the real election it's meant to be a readable stand-in for.
+        const legacyBonus = ((p.legacyTrust ?? 60) - 60) * 0.4;
+        return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + campaignBonus + legacyBonus) };
     });
     const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
     return weights.map(w => ({ party: w.party, share: (w.weight / totalWeight) * 100 })).sort((a, b) => b.share - a.share);
@@ -431,7 +435,11 @@ function runProvinceElection() {
             // here, the same way pork-barrel investment does for whoever's in government --
             // the one electoral lever available to the player regardless of party status.
             const campaignBonus = p.id === state.player.party.id ? (prov.playerCampaignBoost || 0) : 0;
-            return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + campaignBonus + (Math.random() * 10 - 5)) };
+            // Long-term Political Memory (Stage D3): a party's multi-term record (broken
+            // promises, ideology flip-flops, crises it survived or didn't) now has real
+            // electoral weight, not just this term's popularity/investment/campaign numbers.
+            const legacyBonus = ((p.legacyTrust ?? 60) - 60) * 0.4;
+            return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + campaignBonus + legacyBonus + (Math.random() * 10 - 5)) };
         });
         const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
         const provinceResult = {};
@@ -519,7 +527,7 @@ function getFactionResponseBreakdown(factionName, template) {
     }
     return terms;
 }
-function getFactionResponseMultiplier(factionName, rawValue, template) {
+function getFactionResponseMultiplier(factionName, rawValue, template, proposingParty) {
     const terms = getFactionResponseBreakdown(factionName, template);
     let mult = Math.max(0.4, Math.min(2.2, 1 + Object.values(terms).reduce((s, v) => s + v, 0)));
     let adjusted = rawValue * mult;
@@ -530,6 +538,15 @@ function getFactionResponseMultiplier(factionName, rawValue, template) {
     const legitimacyGap = Math.max(0, 60 - (state.world.institutionalLegitimacy ?? 70));
     if (legitimacyGap > 0) {
         adjusted *= adjusted > 0 ? Math.max(0.4, 1 - legitimacyGap / 100) : 1 + legitimacyGap / 150;
+    }
+
+    // Long-term Political Memory (Stage D3): the same discount/belief asymmetry as institutional
+    // legitimacy above, but keyed to the SPECIFIC party enacting this policy -- a government with
+    // a poor multi-term record (broken promises, flip-flopped ideology, crises it didn't survive)
+    // gets less credit for good news and more blame for bad, on top of the national mood.
+    const legacyGap = Math.max(0, 60 - (proposingParty?.legacyTrust ?? 60));
+    if (legacyGap > 0) {
+        adjusted *= adjusted > 0 ? Math.max(0.5, 1 - legacyGap / 120) : 1 + legacyGap / 180;
     }
 
     // Policy memory: the same template enacted before (template.enactCount, incremented once per
@@ -957,7 +974,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvinceVoteShare, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier,
 
     init() {
         state.voteModifier = null;
@@ -1165,7 +1182,13 @@ export const engine = {
                 goals: shuffle(Data.GOAL_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 baseFaction: Data.FACTION_NAMES[Math.floor(Math.random() * Data.FACTION_NAMES.length)],
                 status: "Opposition", seats: 0, trust: 70, popularity: 0,
-                priority: { ...priority }, basePriority: priority, electoralPactWith: null
+                priority: { ...priority }, basePriority: priority, electoralPactWith: null,
+                // Long-term Political Memory (Stage D3): a slow-moving record distinct from
+                // party.trust above, which decays back to 70 within a month or two by design
+                // (grudges/goodwill fade). legacyTrust barely moves month to month -- see
+                // recordLegacyEvent()'s drift comment -- so it can actually hold a multi-term
+                // reputation instead of resetting every time trust does.
+                legacyTrust: 60, legacyHistory: []
             });
         }
         let rSeats = Data.TOTAL_SEATS;
@@ -1222,6 +1245,19 @@ export const engine = {
     },
 
     addNews(h, b = "") { state.news.unshift({ date: state.date.toLocaleDateString('th-TH'), headline: h, body: b || "วิเคราะห์สถานการณ์วันนี้..." }); ui.renderNews(); },
+
+    // Long-term Political Memory (Stage D3): the single place every legacyTrust-moving event
+    // (broken promise, ideology flip, crisis handled/failed, legitimacy built/destroyed) goes
+    // through, so the log and the number can't drift apart. Capped at 20 like addNews() caps
+    // nothing but everything else with a rolling list in this game caps somewhere -- long enough
+    // to browse a party's real record, short enough not to grow forever over a 60-year game.
+    recordLegacyEvent(party, delta, label) {
+        if (!party) return;
+        party.legacyTrust = Math.max(0, Math.min(100, (party.legacyTrust ?? 60) + delta));
+        party.legacyHistory = party.legacyHistory || [];
+        party.legacyHistory.unshift({ date: state.date.toLocaleDateString('th-TH'), label, delta });
+        if (party.legacyHistory.length > 20) party.legacyHistory.length = 20;
+    },
 
     // Spreads a policy's impact on a faction over `days` instead of an instant jolt,
     // so the reaction is still building (and readable in the Factions tab) while it lasts.
@@ -1345,6 +1381,13 @@ export const engine = {
         // a reputation across terms, not just this month" layer.
         const legitimacyPressure = (state.world.transparency < 50 ? -0.15 : 0.05) + (state.world.cabinetStability < 40 ? -0.2 : 0.02);
         state.world.institutionalLegitimacy = Math.max(0, Math.min(100, state.world.institutionalLegitimacy + legitimacyPressure));
+        // Long-term Political Memory (Stage D3): whichever parties are actually governing right
+        // now are the ones building or spending this month's legitimacy swing -- a quiet drift
+        // (not a discrete recordLegacyEvent() entry; logging this every single month would flood
+        // the 20-entry history cap with noise and crowd out the events actually worth browsing).
+        state.parties.filter(p => p.status === "Government").forEach(gp => {
+            gp.legacyTrust = Math.max(0, Math.min(100, (gp.legacyTrust ?? 60) + legitimacyPressure * 2));
+        });
 
         // Long Campaign (Phase 7): the executive perks behind positionIncome only mean anything
         // while the player's party actually holds government -- an ousted PM keeps their MP seat
@@ -1815,7 +1858,12 @@ export const engine = {
         // pact with someone whose ideology it's actively opposed to, and low trust (the same
         // field processQuidProQuo() spends/builds) makes even a compatible party wary.
         const conflict = state.player.party.ideologies.some(i => partner.ideologies.some(gi => ideologiesConflict(i, gi)));
-        const successChance = conflict ? 20 : 60 + ((partner.trust ?? 70) - 70) * 0.5;
+        // Long-term Political Memory (Stage D3): a party's own multi-term record shapes how
+        // willing another party is to commit to it -- a government that's kept its word and
+        // survived its crises is simply a safer bet to ally with than one that's flip-flopped
+        // or broken promises before.
+        const legacyFactor = ((state.player.party.legacyTrust ?? 60) - 60) * 0.3;
+        const successChance = conflict ? 20 : 60 + ((partner.trust ?? 70) - 70) * 0.5 + legacyFactor;
         if (Math.random() * 100 > successChance) {
             this.addNews(`เจรจาพันธมิตรล้มเหลว`, `${partner.name}ปฏิเสธข้อเสนอเป็นพันธมิตรก่อนการเลือกตั้งกับ${state.player.party.name}`);
             ui.updateMain(); return;
@@ -1959,6 +2007,10 @@ export const engine = {
                 const added = pool[Math.floor(Math.random() * pool.length)];
                 party.ideologies[outIdx] = added;
                 this.addNews(`${party.name} ปรับจุดยืนใหม่`, `หลังพ่ายศึกเลือกตั้งอย่างหนัก พรรคเปลี่ยนแนวทางจาก${dropped}สู่${added}`);
+                // Long-term Political Memory (Stage D3): flip-flopping is exactly the kind of
+                // thing that damages a multi-term reputation, beyond this term's seats/trust hit
+                // C4 already applies above.
+                this.recordLegacyEvent(party, -10, `เปลี่ยนอุดมการณ์จาก${dropped}สู่${added}`);
             } else {
                 // Leadership change: a fresh leader resets standing with coalition partners and
                 // brings their own priority lean, same shared roll party creation uses.
@@ -1996,6 +2048,10 @@ export const engine = {
         // Same venting triggerCrisis() does for whichever pressure caused it -- resolved either
         // way, so it doesn't sit maxed out and immediately re-roll next month.
         state.world.coalitionCollapsePressure = ousted ? 0 : Math.max(0, state.world.coalitionCollapsePressure - 40);
+        // Long-term Political Memory (Stage D3): a no-confidence motion is the clearest crisis-
+        // management test this game has -- surviving one is a real mark in a government's favor
+        // that outlasts this term's trust/approval swings; losing one is the opposite.
+        this.recordLegacyEvent(state.player.party, ousted ? -12 : 5, ousted ? "แพ้มติไม่ไว้วางใจ" : "รอดมติไม่ไว้วางใจ");
         // Long Campaign (Phase 7): being ousted mid-term used to end the game (location.reload()).
         // Now the PM's own party is forced into Opposition -- seats don't change, so letting
         // assignGovernmentStatus() run on the full list would just hand government straight back
@@ -2134,6 +2190,10 @@ export const engine = {
 
     finalizeVote(pName, passed) {
         const p = state.activePolicies.find(x => x.name === pName);
+        // Long-term Political Memory (Stage D3): who actually proposed this, resolved once so
+        // both the broken-promise hook below and getFactionResponseMultiplier()'s legacyTrust
+        // term can use it -- same resolution renderOppositionCommandCenter() (Stage C5) uses.
+        const proposingParty = p.proposer === "รัฐบาล" ? state.player.party : (state.leaders.find(l => l.name === p.proposer)?.party || null);
         if (passed) {
             if (p.stage < 3) { p.stage++; p.isDeliberating = true; p.remainingDays = p.totalDays; }
             else {
@@ -2148,7 +2208,7 @@ export const engine = {
                 // times it's actually been enacted -- read and incremented here so
                 // getFactionResponseMultiplier()'s policy-memory term has something real to read.
                 const template = Data.POLICY_TEMPLATES.find(t => t.name === p.name);
-                Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, getFactionResponseMultiplier(fn, v * effectiveness, template), p.name));
+                Object.entries(p.impact).forEach(([fn, v]) => this.applyFactionImpact(fn, getFactionResponseMultiplier(fn, v * effectiveness, template, proposingParty), p.name));
                 if (template) template.enactCount = (template.enactCount || 0) + 1;
                 if (p.worldImpact) Object.entries(p.worldImpact).forEach(([stat, v]) => this.applyWorldStatImpact(stat, v * effectiveness, p.name));
                 state.foreign.forEach(c => {
@@ -2161,9 +2221,18 @@ export const engine = {
                 this.addNews(`${p.name} บังคับใช้เป็นกฎหมาย`, `${effLabel} (ประสิทธิผล ${(effectiveness*100).toFixed(0)}%) -- ${fitLabel}`);
                 state.activePolicies = state.activePolicies.filter(x => x.name !== pName);
             }
-        } else { state.activePolicies = state.activePolicies.filter(x => x.name !== pName); }
-        document.getElementById('event-modal').classList.add('hidden'); 
-        state.lastVoteResults = null; ui.renderParliament(); 
+        } else {
+            // Long-term Political Memory (Stage D3): a government's own bill failing a reading
+            // it already spent political capital proposing (the news already announced it, the
+            // stakeholder review already previewed it) is the closest thing this game's
+            // mechanics have to a broken promise -- the party said it would do this and couldn't.
+            if (proposingParty && proposingParty.status === "Government") {
+                this.recordLegacyEvent(proposingParty, -8, `ร่าง "${p.name}" ตกในสภา`);
+            }
+            state.activePolicies = state.activePolicies.filter(x => x.name !== pName);
+        }
+        document.getElementById('event-modal').classList.add('hidden');
+        state.lastVoteResults = null; ui.renderParliament();
         ui.updateMain(); gameClock.setSpeed(1);
     }
 };

@@ -111,7 +111,28 @@ export const ui = {
         document.getElementById('event-modal').classList.remove('hidden');
     },
 
-    updateMain() { 
+    // Long-term Political Memory (Stage D3): unlike showWhy()'s snapshot of CURRENT factors,
+    // this is a chronological log -- the actual record (broken promises, ideology flips, crises
+    // survived or lost) a party's legacyTrust number is built from, browsable instead of just
+    // asserted. recordLegacyEvent() caps this at 20 entries, newest first.
+    showLegacyHistory(partyId) {
+        this.resetModalState();
+        const p = state.parties.find(x => x.id === partyId); if (!p) return;
+        document.getElementById('event-title').innerText = `ประวัติระยะยาว: ${p.name}`;
+        const history = p.legacyHistory || [];
+        let h = `<div class="text-xs text-stone-500 mb-3">ชื่อเสียงระยะยาวปัจจุบัน: <span class="font-mono font-bold text-black">${(p.legacyTrust ?? 60).toFixed(0)}%</span></div><div class="space-y-2 max-h-[350px] overflow-y-auto scroll-custom">`;
+        if (history.length === 0) h += `<div class="italic text-stone-400 text-center">ยังไม่มีเหตุการณ์สำคัญบันทึกไว้</div>`;
+        history.forEach(ev => {
+            const color = ev.delta > 0 ? 'text-emerald-700' : (ev.delta < 0 ? 'text-red-700' : 'text-stone-400');
+            h += `<div class="flex justify-between border-b border-stone-200 pb-1"><div><div class="text-sm">${ev.label}</div><div class="text-[9px] text-stone-400 font-mono">${ev.date}</div></div><span class="font-mono font-bold ${color}">${ev.delta > 0 ? '+' : ''}${ev.delta}</span></div>`;
+        });
+        h += `</div>`;
+        document.getElementById('event-desc').innerHTML = h;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
+
+    updateMain() {
         this.updateHUD(); 
         const activeTab = document.querySelector('.tab-btn.tab-active')?.getAttribute('onclick');
         if(activeTab?.includes('administration')) { this.renderCabinet(); this.renderActivePolicies(); }
@@ -494,6 +515,7 @@ export const ui = {
                     <td class="p-3 text-center border-r border-stone-200 uppercase text-[9px] font-bold tracking-wider">${p.status}</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold">${p.seats}</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold ${p.id === state.player.party.id ? 'text-stone-400' : ((p.trust ?? 70) > 60 ? 'text-emerald-700' : ((p.trust ?? 70) < 40 ? 'text-red-700' : 'text-stone-700'))}">${p.id === state.player.party.id ? '-' : (p.trust ?? 70).toFixed(0) + '%'}${(p.dependence || 0) > 20 ? `<div class="text-[8px] font-normal normal-case text-purple-700">พึ่งพา ${(p.dependence).toFixed(0)}%</div>` : ''}</td>
+                    <td class="p-3 text-center border-r border-stone-200 font-mono font-bold cursor-pointer hover:underline ${(p.legacyTrust ?? 60) > 65 ? 'text-emerald-700' : ((p.legacyTrust ?? 60) < 45 ? 'text-red-700' : 'text-stone-700')}" onclick="ui.showLegacyHistory('${p.id}')">${(p.legacyTrust ?? 60).toFixed(0)}%</td>
                     <td class="p-3 text-center border-r border-stone-200 font-mono font-bold">${(p.popularity ?? 0).toFixed(0)}%</td>
                     <td class="p-3 text-stone-500 italic border-r border-stone-200">${p.ideologies[0]}</td>
                     <td class="p-3 text-stone-500 italic">${p.goals[0]}</td>
@@ -1086,7 +1108,7 @@ export const ui = {
             // legitimacy, and how many times this exact bill has already been passed before),
             // not the flat template number -- the same math finalizeVote() uses, so the preview
             // can't drift from the real outcome.
-            const projected = raw === 0 ? 0 : engine.getFactionResponseMultiplier(s.name, raw * effectiveness, p);
+            const projected = raw === 0 ? 0 : engine.getFactionResponseMultiplier(s.name, raw * effectiveness, p, state.player.party);
             const color = projected > 0 ? 'text-green-700' : (projected < 0 ? 'text-red-700' : 'text-stone-400');
             h += `<div class="flex justify-between border-b border-stone-300 pb-1 mb-2"><span class="font-bold text-sm">${s.name}</span><span class="font-mono ${color}">${projected > 0 ? '+' : ''}${projected.toFixed(1)}</span></div>`;
         });
