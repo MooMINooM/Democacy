@@ -6,6 +6,7 @@ export const ui = {
     // State
     currentPartyView: null,
     mpListPage: 1,
+    mapView: 'economic', // Province Political Layer (Stage B3): 'economic' | 'political' | 'social'
 
     // --- Main Tab Logic ---
     tab(t) { 
@@ -447,18 +448,46 @@ export const ui = {
     },
 
     // --- PROVINCE MAP ---
+    // Province Political Layer (Stage B3): the map reads as three lenses on the same 77
+    // provinces -- economic (investment), political (who's actually ahead here right now), and
+    // social (gaining or losing people) -- instead of one fixed color scheme that only ever
+    // showed local-faction approval next to an industry icon.
     renderProvinceMap() {
         const cont = document.getElementById('province-map'); if (!cont) return;
         const byRegion = {};
         Data.REGIONS.forEach(r => byRegion[r] = state.provinces.filter(p => p.region === r));
 
+        const toggleCont = document.getElementById('map-view-toggle');
+        if (toggleCont) {
+            const VIEWS = [
+                { id: 'economic', label: 'เศรษฐกิจ', icon: 'fa-industry' },
+                { id: 'political', label: 'การเมือง', icon: 'fa-landmark' },
+                { id: 'social', label: 'สังคม', icon: 'fa-people-group' }
+            ];
+            toggleCont.innerHTML = VIEWS.map(v => `
+                <button onclick="ui.mapView='${v.id}'; ui.renderProvinceMap();" class="px-3 py-2 border-2 border-black text-[10px] font-bold uppercase flex items-center gap-1.5 transition ${this.mapView === v.id ? 'bg-black text-white' : 'bg-white hover:bg-stone-100'}">
+                    <i class="fas ${v.icon}"></i>${v.label}
+                </button>`).join('');
+        }
+
         const chip = (p) => {
-            const faction = state.factions.find(f => f.name === p.baseFaction);
-            const approval = faction ? faction.approval : 50;
-            const color = approval > 60 ? '#10b981' : (approval < 40 ? '#ef4444' : '#f59e0b');
-            const sizeClass = p.pop > 1200000 ? 'text-sm px-3 py-2' : (p.pop > 500000 ? 'text-xs px-2.5 py-1.5' : 'text-[10px] px-2 py-1');
             const industry = Data.INDUSTRY_TYPES[p.industry];
-            return `<button onclick="ui.showProvinceDetail('${p.name}')" title="${industry?.label || ''}" class="border-2 border-black font-bold ${sizeClass} bg-white hover:-translate-y-0.5 transition shadow-[2px_2px_0_#000] hover:shadow-[3px_3px_0_#000] flex items-center gap-1.5" style="border-left: 6px solid ${color}"><i class="fas ${industry?.icon || 'fa-industry'} text-stone-400 text-[10px]"></i>${p.name}</button>`;
+            const sizeClass = p.pop > 1200000 ? 'text-sm px-3 py-2' : (p.pop > 500000 ? 'text-xs px-2.5 py-1.5' : 'text-[10px] px-2 py-1');
+            let color, badge = '';
+            if (this.mapView === 'political') {
+                const layer = engine.getProvincePoliticalLayer(p);
+                color = layer.leaning === 'Government' ? '#3b82f6' : (layer.leaning === 'Opposition' ? '#ef4444' : '#94a3b8');
+                if (layer.competitiveness === 'Battleground') badge = `<i class="fas fa-bullseye text-red-600 text-[9px]" title="สมรภูมิ"></i>`;
+            } else if (this.mapView === 'social') {
+                const layer = engine.getProvincePoliticalLayer(p);
+                color = layer.populationTrend === 'Growing' ? '#10b981' : (layer.populationTrend === 'Shrinking' ? '#ef4444' : '#f59e0b');
+                if (layer.populationTrend === 'Growing') badge = `<i class="fas fa-arrow-trend-up text-emerald-600 text-[9px]"></i>`;
+                else if (layer.populationTrend === 'Shrinking') badge = `<i class="fas fa-arrow-trend-down text-red-600 text-[9px]"></i>`;
+            } else {
+                const inv = p.investmentLevel ?? 50;
+                color = inv > 60 ? '#10b981' : (inv < 40 ? '#ef4444' : '#f59e0b');
+            }
+            return `<button onclick="ui.showProvinceDetail('${p.name}')" title="${industry?.label || ''}" class="border-2 border-black font-bold ${sizeClass} bg-white hover:-translate-y-0.5 transition shadow-[2px_2px_0_#000] hover:shadow-[3px_3px_0_#000] flex items-center gap-1.5" style="border-left: 6px solid ${color}"><i class="fas ${industry?.icon || 'fa-industry'} text-stone-400 text-[10px]"></i>${p.name}${badge}</button>`;
         };
 
         const regionBlock = (name) => `
@@ -500,6 +529,13 @@ export const ui = {
             ? state.foreign.reduce((s, c) => s + c.relation * c.tradeWeight, 0) / state.foreign.reduce((s, c) => s + c.tradeWeight, 0)
             : null;
         const investLevel = p.investmentLevel ?? 50;
+        // Province Political Layer (Stage B3): the province as a source of information for a
+        // decision, not just a button to invest in -- who's actually ahead here right now, how
+        // contested it is, what's straining its own industry, and whether it's gaining or losing people.
+        const layer = engine.getProvincePoliticalLayer(p);
+        const LEANING_LABELS = { Government: ["รัฐบาลนำ", "text-blue-700"], Opposition: ["ฝ่ายค้านนำ", "text-red-700"], Neutral: ["สูสี", "text-stone-700"] };
+        const COMPETITIVE_LABELS = { Battleground: ["สมรภูมิ", "text-red-700"], Leaning: ["เอียงข้างชัดเจน", "text-amber-700"], Safe: ["มั่นคง", "text-emerald-700"] };
+        const TREND_LABELS = { Growing: ["ประชากรเพิ่มขึ้น", "text-emerald-700", "fa-arrow-trend-up"], Shrinking: ["ประชากรลดลง", "text-red-700", "fa-arrow-trend-down"], Stable: ["ประชากรคงที่", "text-stone-700", "fa-minus"] };
         const cont = document.getElementById('province-detail'); if (!cont) return;
         cont.innerHTML = `
             <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-1">ภาค${p.region}</div>
@@ -512,6 +548,14 @@ export const ui = {
                 <div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${industry?.icon || 'fa-industry'} mr-1"></i>อุตสาหกรรมหลัก</span><span class="font-bold">${industry?.label || p.industry}</span></div>
                 ${tradePartner ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas ${tradePartner.icon} mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">${tradePartner.name} (${tradePartner.relation.toFixed(0)}%)</span></div>` : ''}
                 ${isLogistics ? `<div class="flex justify-between border-b border-stone-200 pb-1"><span><i class="fas fa-earth-asia mr-1"></i>คู่ค้าหลัก</span><span class="font-bold">ทุกประเทศเฉลี่ย (${avgTradeRelation.toFixed(0)}%)</span></div>` : ''}
+            </div>
+            <div class="mt-4 pt-3 border-t-2 border-black">
+                <div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2">สนามเลือกตั้ง (ถ้าเลือกตั้งวันนี้)</div>
+                <div class="flex justify-between text-xs border-b border-stone-200 pb-1 mb-1"><span>รัฐบาล ${layer.govSupport.toFixed(0)}% &middot; ฝ่ายค้าน ${layer.oppSupport.toFixed(0)}%</span><span class="font-bold ${LEANING_LABELS[layer.leaning][1]}">${LEANING_LABELS[layer.leaning][0]}</span></div>
+                <div class="w-full h-2 bg-red-200 border border-black mb-2 flex overflow-hidden"><div class="h-full bg-blue-500" style="width:${layer.govSupport}%"></div></div>
+                <div class="flex justify-between text-xs border-b border-stone-200 pb-1"><span>ความสูสี</span><span class="font-bold ${COMPETITIVE_LABELS[layer.competitiveness][1]}">${COMPETITIVE_LABELS[layer.competitiveness][0]}</span></div>
+                <div class="flex justify-between text-xs border-b border-stone-200 pb-1"><span><i class="fas ${TREND_LABELS[layer.populationTrend][2]} mr-1"></i>แนวโน้มประชากร</span><span class="font-bold ${TREND_LABELS[layer.populationTrend][1]}">${TREND_LABELS[layer.populationTrend][0]}</span></div>
+                ${layer.localIssue ? `<div class="flex justify-between text-xs pb-1"><span><i class="fas fa-triangle-exclamation mr-1"></i>ปัญหาเด่นในพื้นที่</span><span class="font-bold text-amber-700">${layer.localIssue}</span></div>` : ''}
             </div>
             ${state.player.party.status === "Government" ? `
             <div class="mt-4 pt-3 border-t-2 border-black">

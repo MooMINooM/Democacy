@@ -147,6 +147,58 @@ function getProvinceContext(prov) {
     const laborCondition = state.world.unemployment < 15 ? "Shortage" : state.world.unemployment < 25 ? "Balanced" : "Surplus";
     return { growthStage, laborCondition };
 }
+// Province Political Layer (Stage B3): the exact same deterministic terms
+// runProvinceElection()'s weight formula uses (affinity bonus, investment swing, campaign
+// boost), minus its per-seat random jitter -- a smooth "if the election were today" reading
+// instead of a one-shot lottery draw, since this is meant to inform planning, not decide a result.
+function getProvinceVoteShare(prov) {
+    const affinity = Data.FACTION_IDEOLOGY_AFFINITY[prov.baseFaction];
+    const investmentSwing = ((prov.investmentLevel ?? 50) - 50) * 0.5;
+    const weights = state.parties.map(p => {
+        const bonus = affinity && p.ideologies.includes(affinity) ? 25 : 0;
+        const govBonus = p.status === "Government" ? investmentSwing : 0;
+        const campaignBonus = p.id === state.player.party.id ? (prov.playerCampaignBoost || 0) : 0;
+        return { party: p, weight: Math.max(1, p.popularity + bonus + govBonus + campaignBonus) };
+    });
+    const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
+    return weights.map(w => ({ party: w.party, share: (w.weight / totalWeight) * 100 })).sort((a, b) => b.share - a.share);
+}
+// Province Political Layer (Stage B3): a province is a source of decisions, not just a place to
+// click invest -- government/opposition support (from the vote-share preview above),
+// competitiveness, which national pressure this province's own industry actually feels worst
+// (reusing INDUSTRY_TYPES.sensitivity, not a new per-province stat), and whether it's currently
+// gaining or losing people (the same regional-deviation term the monthly migration drift itself
+// already computes, Phase 6).
+function getProvincePoliticalLayer(prov) {
+    const shares = getProvinceVoteShare(prov);
+    const govSupport = shares.filter(s => s.party.status === "Government").reduce((s, x) => s + x.share, 0);
+    const oppSupport = shares.filter(s => s.party.status === "Opposition").reduce((s, x) => s + x.share, 0);
+    const margin = Math.abs(govSupport - oppSupport);
+    const competitiveness = margin < 10 ? "Battleground" : margin < 25 ? "Leaning" : "Safe";
+    const leaning = govSupport > oppSupport ? "Government" : oppSupport > govSupport ? "Opposition" : "Neutral";
+
+    const industry = Data.INDUSTRY_TYPES[prov.industry];
+    let localIssue = null;
+    if (industry?.sensitivity) {
+        const strains = Object.entries(industry.sensitivity).map(([stat, weight]) => {
+            const meta = Data.WORLD_STAT_META[stat];
+            const value = state.world[stat] ?? meta?.baseline ?? 50;
+            // weight>0 means this industry wants the stat HIGH (bad = value below baseline);
+            // weight<0 means it wants the stat LOW (bad = value above baseline) -- same sign
+            // convention provinceOutput() itself reads these weights with.
+            const strain = weight > 0 ? (meta.baseline - value) * weight : (value - meta.baseline) * -weight;
+            return { stat, label: meta?.label || stat, strain };
+        }).sort((a, b) => b.strain - a.strain);
+        if (strains[0]?.strain > 3) localIssue = strains[0].label;
+    }
+
+    const regionProvs = state.provinces.filter(p => p.region === prov.region);
+    const regionAvgInvestment = regionProvs.reduce((s, p) => s + (p.investmentLevel ?? 50), 0) / regionProvs.length;
+    const investDeviation = (prov.investmentLevel ?? 50) - regionAvgInvestment;
+    const populationTrend = investDeviation > 5 ? "Growing" : investDeviation < -5 ? "Shrinking" : "Stable";
+
+    return { govSupport, oppSupport, competitiveness, leaning, localIssue, populationTrend, shares };
+}
 // Seat Security (Stage B2): now that every MP carries a real province (Stage B1), this reads
 // that constituency directly -- its own base faction's approval, and whether it's actually
 // under- or well-invested -- instead of leaning on mp.status (the MP's personal faction
@@ -518,7 +570,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer,
 
     init() {
         state.voteModifier = null;
