@@ -1541,7 +1541,10 @@ export const engine = {
         // term; nationalBudget was the one exception. A gentle pull toward 60% of the opening
         // treasury, not the full 100% -- some long-run fiscal erosion from real governing is
         // expected, just not an unbounded bleed toward zero regardless of anyone's choices.
-        state.world.nationalBudget += (REFERENCE_BUDGET * 0.6 - state.world.nationalBudget) * 0.003;
+        // Verification re-run at 0.003 (4 seeds, 80 years) still showed a real, if slower,
+        // decline -- the pull was too weak to actually offset AI's ongoing enactment spending,
+        // only softened it. Raised ~7x; re-verify below before trusting this constant either.
+        state.world.nationalBudget += (REFERENCE_BUDGET * 0.6 - state.world.nationalBudget) * 0.02;
 
         // Population dynamics: each province's headcount drifts monthly instead of staying
         // frozen for the whole game. A slow national baseline tracks overall growth.
