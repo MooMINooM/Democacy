@@ -984,11 +984,17 @@ export const gameClock = {
         if(Math.random() < (0.01 + (Math.max(state.world.protestPressure, state.world.economicCrisisPressure) / 100) * 0.03) * state.speed) engine.triggerCrisis();
         // Coup Pressure replaces the old hard transparency<40 AND army<50 gate -- both terms
         // already feed the pressure itself, continuously, instead of an all-or-nothing switch.
-        // Crisis Calibration (Balance Pass v1 Phase 2): the doc's own ask -- log the pressure
-        // breakdown AND the actual random roll right at the moment a coup fires, not just the
-        // fact that one happened, so a real distribution of "how close/far" each trigger was can
-        // be examined after the fact instead of guessing from anecdote.
-        {
+        // Crisis Calibration (Balance Pass v1 Phase 2): 50-seed Monte Carlo testing found this
+        // roll firing from coupPressure as low as 6-25 (nowhere near its 100 cap) -- at ~122
+        // ticks/year, even a ~0.5-1% per-tick chance compounds to near-certainty within 1-4 years,
+        // so Corrupt and Populist were coup-ing 10/10 seeds every time, purely from RNG
+        // accumulation at a mildly elevated pressure sustained long enough, not from pressure ever
+        // genuinely reaching crisis levels. triggerNoConfidence() above already guards its own
+        // roll behind a `> 20` floor on its pressure for exactly this reason; coupPressure never
+        // had the same floor. Gated at 35 (close to where at least one of the breakdown's own
+        // 40/40/50-threshold terms has to be substantially active, not just barely nonzero) --
+        // logged AND rolled only once pressure has genuinely built, not from month one.
+        if (state.world.coupPressure > 35) {
             const roll = Math.random(); const chance = (state.world.coupPressure / 100) * 0.015 * state.speed;
             const fired = roll < chance;
             if (fired) engine.logCrisisTrigger("coup", getCoupBreakdown(), state.world.coupPressure, chance, roll);
