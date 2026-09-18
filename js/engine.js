@@ -246,6 +246,46 @@ function getPressureBreakdown() {
         "ความโปร่งใสต่ำ": Math.max(0, (100 - state.world.transparency) * 0.3)
     };
 }
+// Event Pressure Framework (Stage C1): protestPressure's own pattern (a real, visible, structural
+// buildup instead of a blind dice roll) extended to the other three trigger checks that used to
+// be flat/gated random -- triggerNoConfidence(), triggerCrisis()'s Economic branch, and
+// triggerCoup(). Random still decides *when* within tick(), but now scaled by how much these
+// pressures have actually built up, the same relationship protestPressure->triggerCrisis() already had.
+function getCoalitionCollapseBreakdown() {
+    const coalitionParties = state.parties.filter(p => p.status === "Government" && p.id !== state.player.party.id);
+    const avgCoalitionTrust = coalitionParties.length > 0 ? coalitionParties.reduce((s, p) => s + (p.trust ?? 70), 0) / coalitionParties.length : 100;
+    return {
+        "พรรคร่วมรัฐบาลไม่ไว้ใจ": Math.max(0, (70 - avgCoalitionTrust) * 1.2),
+        "เสถียรภาพคณะรัฐมนตรีต่ำ": Math.max(0, (50 - state.world.cabinetStability) * 0.8),
+        "ความนิยมรัฐบาลต่ำ": Math.max(0, (40 - state.world.approval) * 0.6)
+    };
+}
+function getEconomicCrisisBreakdown() {
+    const fiscal = getNationalContext().fiscalCondition;
+    const fiscalStrain = fiscal === "Debt Stress" ? 30 : fiscal === "Tight" ? 15 : 0;
+    // The growth term's coefficient was originally 8 (borrowed from growth's own productionBias
+    // scale) -- calm-baseline testing caught a real feedback spiral it created: an Economic
+    // crisis sets growthPenalty (up to 15), which drags growth down once the month rolls over,
+    // which fed straight back into this same pressure at 8x, re-triggering another Economic
+    // crisis before growthPenalty had time to decay. Cut to 1.5 (an ~80% reduction, the same
+    // scale of cut the Phase 5 employment-feedback fix needed for the same reason) so a crisis's
+    // own aftermath doesn't relaunch the pressure that caused it.
+    return {
+        "เศรษฐกิจหดตัว": Math.max(0, -state.world.growth * 1.5),
+        "การว่างงานสูง": Math.max(0, (state.world.unemployment - 20) * 1.2),
+        "สถานะการคลังตึงตัว": fiscalStrain
+    };
+}
+function getCoupBreakdown() {
+    const army = state.factions.find(f => f.name === "กองทัพ");
+    const armyApproval = army ? army.approval : 50;
+    return {
+        "ความโปร่งใสต่ำ": Math.max(0, (40 - state.world.transparency) * 0.8),
+        "กองทัพไม่พอใจ": Math.max(0, (50 - armyApproval) * 0.6),
+        "เสถียรภาพคณะรัฐมนตรีต่ำ": Math.max(0, (40 - state.world.cabinetStability) * 0.5),
+        "แรงกดดันประท้วงสูง": Math.max(0, (state.world.protestPressure - 50) * 0.3)
+    };
+}
 function getApprovalBreakdown() {
     const rows = {};
     [...state.factions].sort((a, b) => Math.abs(b.approval - 50) - Math.abs(a.approval - 50)).slice(0, 5)
@@ -349,9 +389,15 @@ function getImplementationEffectiveness(p) {
     const minister = ministry?.currentMinister;
     let fitMultiplier, fitLabel;
     if (!minister) { fitMultiplier = 0.5; fitLabel = "ไม่มีรัฐมนตรีดูแลกระทรวงนี้"; }
-    else if (minister.trait.goal === p.goal) { fitMultiplier = 1.15; fitLabel = `${minister.name}สนใจประเด็นนี้เป็นพิเศษ`; }
-    else if (ideologiesConflict(minister.trait.ideology, p.ideology)) { fitMultiplier = 0.7; fitLabel = `${minister.name}ไม่เห็นด้วยกับแนวทางนี้`; }
-    else { fitMultiplier = 1.0; fitLabel = `${minister.name}ดูแลตามปกติ`; }
+    else {
+        if (minister.trait.goal === p.goal) { fitMultiplier = 1.15; fitLabel = `${minister.name}สนใจประเด็นนี้เป็นพิเศษ`; }
+        else if (ideologiesConflict(minister.trait.ideology, p.ideology)) { fitMultiplier = 0.7; fitLabel = `${minister.name}ไม่เห็นด้วยกับแนวทางนี้`; }
+        else { fitMultiplier = 1.0; fitLabel = `${minister.name}ดูแลตามปกติ`; }
+        // Opposition Gameplay v2 (Stage C5): a minister who shadowed this exact ministry while in
+        // opposition (assignShadowMinister()) already studied the brief -- a small but real edge,
+        // and the payoff that makes building a shadow cabinet worth doing before you're back in power.
+        if (minister.shadowedMinistries?.[p.ministry]) { fitMultiplier += 0.1; fitLabel += ` (เคยเป็นรัฐมนตรีเงากระทรวงนี้)`; }
+    }
 
     // Budget Coverage reads the same fiscalCondition tag Phase 1/2 already computes -- a policy
     // costing a few billion barely dents a multi-trillion treasury on paper, but a government
@@ -361,6 +407,101 @@ function getImplementationEffectiveness(p) {
 
     const effectiveness = Math.max(0.2, capacityMultiplier * fitMultiplier * budgetMultiplier);
     return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload };
+}
+
+// AI Government Behavior v2 (Stage C3): aiPropose() used to grab a fully random MP and a fully
+// random policy template -- no reading of ideology, which faction is hurting, which national
+// stat is worst, coalition demand, or how close the next election is, exactly the gap the
+// roadmap calls out. Once a policy passes, finalizeVote() already runs it through
+// getImplementationEffectiveness() and the same faction/world-stat/foreign consequences a
+// player's own policy gets, regardless of who proposed it -- the "same state capacity, real
+// consequences" half of AI Government Behavior v2 was already true structurally; this is the
+// selection half.
+function scoreAIPolicy(template, drivingParty) {
+    let score = 0;
+    // Ideology: does this fit what the governing coalition actually stands for?
+    const govParties = state.parties.filter(p => p.status === "Government");
+    if (govParties.some(p => p.ideologies.includes(template.ideology))) score += 20;
+    // Party Personality (Stage C4): on top of the coalition-wide terms below, the specific party
+    // actually driving this proposal weighs it by its own lasting priority lean -- a party whose
+    // bias runs toward สวัสดิการ pushes welfare bills more often than one leaning ความมั่นคง would,
+    // even inside the same coalition. drivingParty.priority drifts slowly (see
+    // updatePartyPriorities()) so this bias adapts rather than staying a fixed pattern forever.
+    if (drivingParty && template.category && drivingParty.priority) {
+        score += (drivingParty.priority[template.category] || 0) * 0.4;
+    }
+    // Faction pressure: a template that helps (positive impact on) a currently unhappy target
+    // faction is more urgent than one that helps a faction already doing fine.
+    const targetFaction = state.factions.find(f => f.name === template.target);
+    if (targetFaction && targetFaction.approval < 45 && (template.impact?.[template.target] || 0) > 0) {
+        score += (45 - targetFaction.approval) * 0.8;
+    }
+    // Economic context: reward whichever national stat this policy actually improves, weighted
+    // by how far that stat currently sits from where it should be.
+    Object.entries(template.worldImpact || {}).forEach(([stat, impact]) => {
+        const meta = Data.WORLD_STAT_META[stat]; if (!meta) return;
+        const value = state.world[stat] ?? meta.baseline;
+        const badness = meta.goodDirection > 0 ? Math.max(0, meta.baseline - value) : Math.max(0, value - meta.baseline);
+        const helps = meta.goodDirection > 0 ? impact > 0 : impact < 0;
+        if (helps) score += badness * 0.5;
+    });
+    // Coalition demand: the neediest partner (highest dependence -- Phase 3) gets some weight
+    // toward whatever it's actually pushing for, the same way a real coalition partner would.
+    const neediest = govParties.filter(p => p.id !== state.player.party.id).sort((a, b) => (b.dependence || 0) - (a.dependence || 0))[0];
+    if (neediest && (neediest.ideologies.includes(template.ideology) || neediest.goals.includes(template.goal))) {
+        score += (neediest.dependence || 0) * 0.3;
+    }
+    // Election proximity: with a vote coming up, a bill that can actually land before polling
+    // day is worth more than one still in committee -- prefer faster deliberation times.
+    const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+    if (daysToElection < 180) score += Math.max(0, 60 - template.delibTime) * 0.3;
+    return score;
+}
+
+// AI Party Personality (Stage C4): each party's lasting lean across the 4 PRIORITY_CATEGORIES,
+// one clearly dominant so parties actually read as different from each other instead of all
+// scoring templates the same way. Reused both at party creation and after an election punishes
+// a party badly enough to pick a new leader (applyElectionPunishment()).
+function generatePartyPriority() {
+    const dominant = Data.PRIORITY_CATEGORIES[Math.floor(Math.random() * Data.PRIORITY_CATEGORIES.length)];
+    const priority = {};
+    Data.PRIORITY_CATEGORIES.forEach(c => { priority[c] = c === dominant ? 40 + Math.random() * 30 : Math.random() * 25; });
+    return priority;
+}
+
+// A party's priority is a bias, not a fixed pattern (roadmap's own wording) -- it should drift
+// toward what the world and the party's own base actually need, not just sit at its starting
+// roll forever. Called monthly (in processMonthlyUpdate()) so the drift stays slow and readable
+// as a lasting lean rather than something that swings with every tick like a pressure stat.
+//
+// Anchored to party.basePriority (the fixed roll from generatePartyPriority(), unchanged except
+// on a leadership change), NOT to party.priority's own current value -- an early version targeted
+// current-value-plus-badness, which meant the target itself rose every time priority rose, so any
+// persistent badness ratcheted priority toward 100 forever with nothing to pull it back down once
+// conditions improved (confirmed in testing: after ~16 elections/64 years, 3 of 4 categories had
+// pinned at 99.99 on multiple parties, erasing the "one clearly dominant lean" the whole feature
+// is meant to show). Anchoring to a fixed base means the target -- and priority behind it --
+// actually falls back when the badness that pushed it up goes away, a real adapt-and-recede bias
+// instead of a one-way ratchet.
+function getPartyPriorityTarget(party) {
+    const unemploymentBadness = Math.max(0, state.world.unemployment - Data.WORLD_STAT_META.unemployment.baseline);
+    const crimeBadness = Math.max(0, state.world.crime - Data.WORLD_STAT_META.crime.baseline);
+    const envBadness = Math.max(0, Data.WORLD_STAT_META.environment.baseline - state.world.environment);
+    const securityBadness = Math.max(0, state.world.protestPressure - 30) + Math.max(0, Data.WORLD_STAT_META.military.baseline - state.world.military);
+
+    // Base pressure: a party whose own base is unhappy pivots toward bread-and-butter relief
+    // regardless of its original ideology, the same way a real party chases its slipping base.
+    const baseFaction = state.factions.find(f => f.name === party.baseFaction);
+    const baseUnhappy = baseFaction ? Math.max(0, 45 - baseFaction.approval) : 0;
+
+    const base = party.basePriority || party.priority;
+    const target = { ...base };
+    target["เศรษฐกิจ"] = (base["เศรษฐกิจ"] || 0) + unemploymentBadness * 0.3 + baseUnhappy * 0.15;
+    target["สวัสดิการ"] = (base["สวัสดิการ"] || 0) + (unemploymentBadness + crimeBadness) * 0.2 + baseUnhappy * 0.15;
+    target["สิ่งแวดล้อม"] = (base["สิ่งแวดล้อม"] || 0) + envBadness * 0.3;
+    target["ความมั่นคง"] = (base["ความมั่นคง"] || 0) + securityBadness * 0.25;
+    Data.PRIORITY_CATEGORIES.forEach(c => { target[c] = Math.max(0, Math.min(100, target[c])); });
+    return target;
 }
 
 // Economy v2 (Phase 5): what share of the country's actual current output rides on trade versus
@@ -483,20 +624,68 @@ export const gameClock = {
         ));
         state.world.protestPressure = Math.max(0, Math.min(100, state.world.protestPressure + (targetPressure - state.world.protestPressure) * 0.05 * state.speed));
 
-        if(crossedDayOfMonth(prevDate, state.date, 15) && Math.random() < 0.1) engine.aiPropose();
-        if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && (state.world.approval < 30 || state.world.cabinetStability < 40)) {
-           if(Math.random() < 0.05) engine.triggerNoConfidence();
+        // Event Pressure Framework (Stage C1): the same structural-buildup treatment for the
+        // three other trigger checks below, which used to be a flat or hard-gated random roll.
+        const coalitionParties = state.parties.filter(p => p.status === "Government" && p.id !== state.player.party.id);
+        const avgCoalitionTrust = coalitionParties.length > 0 ? coalitionParties.reduce((s, p) => s + (p.trust ?? 70), 0) / coalitionParties.length : 100;
+        const targetCollapsePressure = Math.max(0, Math.min(100,
+            (70 - avgCoalitionTrust) * 1.2 +
+            (50 - state.world.cabinetStability) * 0.8 +
+            (40 - state.world.approval) * 0.6
+        ));
+        state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, state.world.coalitionCollapsePressure + (targetCollapsePressure - state.world.coalitionCollapsePressure) * 0.05 * state.speed));
+
+        const fiscal = getNationalContext().fiscalCondition;
+        const fiscalStrain = fiscal === "Debt Stress" ? 30 : fiscal === "Tight" ? 15 : 0;
+        const targetEconomicPressure = Math.max(0, Math.min(100,
+            Math.max(0, -state.world.growth) * 1.5 +
+            (state.world.unemployment - 20) * 1.2 +
+            fiscalStrain
+        ));
+        state.world.economicCrisisPressure = Math.max(0, Math.min(100, state.world.economicCrisisPressure + (targetEconomicPressure - state.world.economicCrisisPressure) * 0.05 * state.speed));
+
+        const army = state.factions.find(f => f.name === "กองทัพ");
+        const armyApproval = army ? army.approval : 50;
+        const targetCoupPressure = Math.max(0, Math.min(100,
+            (40 - state.world.transparency) * 0.8 +
+            (50 - armyApproval) * 0.6 +
+            (40 - state.world.cabinetStability) * 0.5 +
+            (state.world.protestPressure - 50) * 0.3
+        ));
+        state.world.coupPressure = Math.max(0, Math.min(100, state.world.coupPressure + (targetCoupPressure - state.world.coupPressure) * 0.05 * state.speed));
+
+        if(crossedDayOfMonth(prevDate, state.date, 15)) {
+            // Proposal frequency now scales with urgency instead of a flat 10% roll -- a
+            // government sitting on rising pressure or a close election should legislate more
+            // often, not the same trickle as a calm term. Capped well under 1 so a bad month
+            // doesn't guarantee a proposal every tick, which would itself become a spending
+            // feedback loop worth checking for in calm-baseline testing (same class of bug as
+            // the Stage C1 economicCrisisPressure spiral).
+            const urgency = Math.max(state.world.protestPressure, state.world.economicCrisisPressure, state.world.coalitionCollapsePressure) / 100;
+            const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+            const proposeChance = 0.1 + urgency * 0.15 + (daysToElection < 180 ? 0.1 : 0);
+            if (Math.random() < proposeChance) engine.aiPropose();
+        }
+        // Coalition Collapse Pressure now gates and scales this instead of a flat 0.05 roll behind
+        // a hard approval/stability AND-gate -- a floor of 20 keeps ordinary governing from ever
+        // rolling at all, same effective floor the old gate provided. player.position is just the
+        // title chosen at setup and never changes after an ouster, so a no-confidence motion
+        // against a player no longer actually governing needs the live party.status too -- a
+        // pre-existing gap from before this pressure framework, surfaced by testing this check
+        // firing far more often than intended once coalitionCollapsePressure genuinely rewards checking.
+        if(crossedDayOfMonth(prevDate, state.date, 28) && state.player.position === "นายกรัฐมนตรี" && state.player.party.status === "Government" && state.world.coalitionCollapsePressure > 20) {
+           if(Math.random() < (state.world.coalitionCollapsePressure / 100) * 0.3) engine.triggerNoConfidence();
         }
         // tick() fires once per real second regardless of state.speed, but each tick now covers
         // `state.speed` in-game days -- so every random-event check below is scaled by state.speed
         // too, or a player idling at 3x would silently see ~3x fewer crises/incidents per in-game
-        // year than one at 1x, purely as a side effect of the speed toggle. The crisis roll also
-        // now reads protestPressure: pressure changes the odds, not just the aftermath.
-        if(Math.random() < (0.01 + (state.world.protestPressure / 100) * 0.03) * state.speed) engine.triggerCrisis();
-        if(state.world.transparency < 40 && Math.random() < 0.05 * state.speed) {
-             const army = state.factions.find(f => f.name === "กองทัพ");
-             if(army && army.approval < 50) engine.triggerCoup();
-        }
+        // year than one at 1x, purely as a side effect of the speed toggle. The crisis roll now
+        // reads whichever of protest/economic pressure is higher: either building up is enough to
+        // make *a* crisis likely, and triggerCrisis() itself picks the type from their relative share.
+        if(Math.random() < (0.01 + (Math.max(state.world.protestPressure, state.world.economicCrisisPressure) / 100) * 0.03) * state.speed) engine.triggerCrisis();
+        // Coup Pressure replaces the old hard transparency<40 AND army<50 gate -- both terms
+        // already feed the pressure itself, continuously, instead of an all-or-nothing switch.
+        if(Math.random() < (state.world.coupPressure / 100) * 0.015 * state.speed) engine.triggerCoup();
         
         // The 5 policy-driven national stats: apply/decay their modifiers, then drift back
         // toward baseline like faction/party trust does, so a policy's effect fades unless renewed.
@@ -581,7 +770,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown,
 
     init() {
         state.voteModifier = null;
@@ -635,13 +824,18 @@ export const engine = {
         state.world.growthBreakdown = growthBreakdown;
         const openingPressureBreakdown = getPressureBreakdown();
         state.world.protestPressure = Math.max(0, Math.min(100, Object.values(openingPressureBreakdown).reduce((s, v) => s + v, 0)));
+        // Event Pressure Framework (Stage C1): same day-one treatment for the other three
+        // pressures -- computed from the real formula instead of the flat 0 placeholder.
+        state.world.coalitionCollapsePressure = Math.max(0, Math.min(100, Object.values(getCoalitionCollapseBreakdown()).reduce((s, v) => s + v, 0)));
+        state.world.economicCrisisPressure = Math.max(0, Math.min(100, Object.values(getEconomicCrisisBreakdown()).reduce((s, v) => s + v, 0)));
+        state.world.coupPressure = Math.max(0, Math.min(100, Object.values(getCoupBreakdown()).reduce((s, v) => s + v, 0)));
 
         ui.renderCabinet(); ui.renderMinistryList();
         this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
         // A real baseline for every trend arrow and why-breakdown from the very first render,
         // instead of an empty history that would only start showing a trend a month in.
         for(let i=0; i<6; i++) { state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget); }
-        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
+        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure"].forEach(key => {
             state.history[key] = [];
             for (let i = 0; i < 6; i++) state.history[key].push(state.world[key]);
         });
@@ -744,12 +938,14 @@ export const engine = {
         
         for(let i=0; i<20; i++) {
             let size = i < 6 ? "Major" : (i < 12 ? "Medium" : "Small");
+            const priority = generatePartyPriority();
             pArr.push({
                 id: "P" + (i + 1), name: "พรรค" + names[i], size, color: colors[i],
                 ideologies: shuffle(Data.IDEOLOGY_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 goals: shuffle(Data.GOAL_POOL).slice(0, size === "Major" ? 5 : (size === "Medium" ? 3 : 2)),
                 baseFaction: Data.FACTION_NAMES[Math.floor(Math.random() * Data.FACTION_NAMES.length)],
-                status: "Opposition", seats: 0, trust: 70, popularity: 0
+                status: "Opposition", seats: 0, trust: 70, popularity: 0,
+                priority: { ...priority }, basePriority: priority, electoralPactWith: null
             });
         }
         let rSeats = Data.TOTAL_SEATS;
@@ -789,6 +985,20 @@ export const engine = {
         for (const p of sorted) {
             if (p.status !== "Government") p.status = (p.seats > 40 || Math.random() > 0.5) ? "Opposition" : "Neutral";
         }
+
+        // Opposition Gameplay v2 (Stage C5): a pre-election alliance (negotiateAlliance()) is a
+        // commitment, not just a hope -- if either side of a pact ends up in government by the
+        // above heuristic, the other rides in with them regardless of the usual ideology-conflict
+        // filter. Doesn't rework the coalition-formation algorithm itself (too invasive for what's
+        // meant to be an insurance policy on an existing government seat, not a guarantee of one),
+        // so a pact only pays off when at least one side already made it in on its own. Consumed
+        // once here -- a fresh negotiation is needed before the next election.
+        pArr.forEach(p => {
+            if (!p.electoralPactWith) return;
+            const partner = pArr.find(x => x.id === p.electoralPactWith);
+            if (partner && p.status === "Government" && partner.status !== "Government") partner.status = "Government";
+        });
+        pArr.forEach(p => { p.electoralPactWith = null; });
     },
 
     addNews(h, b = "") { state.news.unshift({ date: state.date.toLocaleDateString('th-TH'), headline: h, body: b || "วิเคราะห์สถานการณ์วันนี้..." }); ui.renderNews(); },
@@ -927,13 +1137,24 @@ export const engine = {
         state.leaders.forEach(l => { l.trust = l.trust + (50 - l.trust) * 0.1; });
         state.parties.forEach(p => { p.trust = (p.trust ?? 70) + (70 - (p.trust ?? 70)) * 0.1; });
 
+        // AI Party Personality (Stage C4): each party's priority lean drifts toward what the
+        // world and its own base currently reward, slowly (10%/month, same cadence as trust
+        // above) so it reads as a lasting bias shifting over a term, not a stat that swings with
+        // every crisis.
+        state.parties.forEach(p => {
+            if (!p.priority) { const fresh = generatePartyPriority(); p.priority = { ...fresh }; p.basePriority = fresh; }
+            if (!p.basePriority) p.basePriority = { ...p.priority };
+            const target = getPartyPriorityTarget(p);
+            Data.PRIORITY_CATEGORIES.forEach(c => { p.priority[c] = p.priority[c] + (target[c] - p.priority[c]) * 0.1; });
+        });
+
         // Trend arrows (Phase 2): a short rolling history per stat, so the UI can say "up from
         // last month" not just show a bare number. Pushed last, after every stat this month has
         // actually finished recomputing -- approval and cabinetStability used to get pushed
         // *before* their own recompute above, so their trend arrow was permanently a month stale.
         state.history.approval.push(state.world.approval); state.history.budget.push(state.world.nationalBudget);
         if(state.history.approval.length > 6) state.history.approval.shift(); if(state.history.budget.length > 6) state.history.budget.shift();
-        ["growth", "cabinetStability", "protestPressure"].forEach(key => {
+        ["growth", "cabinetStability", "protestPressure", "coalitionCollapsePressure", "economicCrisisPressure", "coupPressure"].forEach(key => {
             if (!state.history[key]) state.history[key] = [];
             state.history[key].push(state.world[key]);
             if (state.history[key].length > 6) state.history[key].shift();
@@ -1033,17 +1254,22 @@ export const engine = {
     },
 
     triggerCrisis() {
-        // Which kind of crisis fires is itself context-read now: high protestPressure biases
-        // toward Protest, not a flat coin flip -- the buildup the player already saw explains
-        // which crisis showed up, instead of it looking arbitrary.
-        const protestChance = 0.3 + (state.world.protestPressure / 100) * 0.5;
-        const type = Math.random() < protestChance ? "Protest" : "Economic";
+        // Event Pressure Framework (Stage C1): which kind of crisis fires now reads both
+        // pressures' relative share instead of protestPressure alone deciding against a flat
+        // 30-80% band -- if economicCrisisPressure has genuinely built up higher than
+        // protestPressure, Economic is the more likely (not just possible) outcome.
+        const totalPressure = state.world.protestPressure + state.world.economicCrisisPressure;
+        const protestShare = totalPressure > 1 ? state.world.protestPressure / totalPressure : 0.5;
+        const type = Math.random() < protestShare ? "Protest" : "Economic";
         if (type === "Economic") {
             // Mirrors the Protest branch's stabilityPenalty: a temporary, decaying drag (via
             // tick()'s growthPenalty decay) instead of a permanent subtraction, so repeated
             // crises fade over a couple of weeks like everything else in the game instead of
             // requiring the monthly growth blend alone to claw them back.
             state.world.growthPenalty = Math.min(15, (state.world.growthPenalty || 0) + 2.5);
+            // Same venting the Protest branch already does for protestPressure -- the crisis
+            // itself lets off some of the pressure that built up to cause it.
+            state.world.economicCrisisPressure = Math.max(0, state.world.economicCrisisPressure - 35);
             this.addNews("วิกฤตเศรษฐกิจถดถอย!", "GDP ร่วงกราวรูด ค่าครองชีพพุ่งสูง");
         } else {
             state.world.stabilityPenalty = Math.min(50, (state.world.stabilityPenalty || 0) + 15);
@@ -1096,10 +1322,27 @@ export const engine = {
     },
 
     aiPropose() {
-        const aiMP = state.leaders[Math.floor(Math.random()*state.leaders.length)];
-        const temp = Data.POLICY_TEMPLATES[Math.floor(Math.random()*Data.POLICY_TEMPLATES.length)];
-        if (aiMP.party.status === "Government" && temp.cost > state.world.nationalBudget * 0.1) return;
-        this.propose(temp, `${aiMP.name}`);
+        const candidates = Data.POLICY_TEMPLATES.filter(t => !state.activePolicies.some(x => x.name === t.name));
+        if (candidates.length === 0) return;
+
+        // Party Personality (Stage C4): which government party actually drives this month's
+        // proposal is picked weighted by seats (a bigger coalition partner gets more turns at
+        // the wheel), then its own priority lean shapes what it pushes -- see scoreAIPolicy().
+        const govParties = state.parties.filter(p => p.status === "Government");
+        let drivingParty = null;
+        if (govParties.length > 0) {
+            const totalGovSeats = govParties.reduce((s, p) => s + p.seats, 0);
+            let r = Math.random() * totalGovSeats;
+            drivingParty = govParties[govParties.length - 1];
+            for (const p of govParties) { r -= p.seats; if (r <= 0) { drivingParty = p; break; } }
+        }
+
+        const scored = candidates.map(t => ({ t, score: scoreAIPolicy(t, drivingParty) })).sort((a, b) => b.score - a.score);
+        const picked = scored[Math.floor(Math.random() * Math.min(3, scored.length))].t;
+        const partyMPs = drivingParty ? state.leaders.filter(l => l.party.id === drivingParty.id) : [];
+        const aiMP = partyMPs.length > 0 ? partyMPs[Math.floor(Math.random()*partyMPs.length)] : state.leaders[Math.floor(Math.random()*state.leaders.length)];
+        if (aiMP.party.status === "Government" && picked.cost > state.world.nationalBudget * 0.1) return;
+        this.propose(picked, `${aiMP.name}`);
     },
 
     partyWhip() {
@@ -1273,6 +1516,80 @@ export const engine = {
         ui.updateMain(); ui.showProvinceDetail(prov.name);
     },
 
+    // Opposition Gameplay v2 (Stage C5): the roadmap is explicit that opposition needs its own
+    // goal -- "build a path back to power" -- not a scaled-down copy of government actions.
+    // campaignProvince() above already covers building a provincial base; these three cover the
+    // rest of the roadmap's list (Shadow Cabinet, policy stance, pre-election alliance), each
+    // wired into a real system instead of just posting a news item: a shadow minister's fit
+    // bonus shows up in getImplementationEffectiveness() once they're a real minister, an
+    // opposition stance moves the actual vote math in runVote() via oppositionLobby/
+    // coalitionBoost, and an alliance changes who assignGovernmentStatus() actually seats.
+    assignShadowMinister(ministryName, mpId) {
+        if (state.player.party.status !== "Opposition") { alert("เฉพาะฝ่ายค้านเท่านั้นที่ตั้งคณะรัฐมนตรีเงาได้"); return; }
+        if (!Data.MINISTRIES[ministryName]) return;
+        const mp = state.leaders.find(l => l.id === mpId);
+        if (!mp || mp.party.id !== state.player.party.id) { alert("เลือกได้เฉพาะ สส. พรรคท่านเอง"); return; }
+        state.player.shadowCabinet[ministryName] = mpId;
+        mp.shadowedMinistries = mp.shadowedMinistries || {};
+        mp.shadowedMinistries[ministryName] = true;
+        // A smaller echo of the prestige/trust boost a real appointment gives (appointMinister()).
+        mp.prestige = Math.min(100, (mp.prestige ?? 50) + 5);
+        mp.trust = Math.min(100, mp.trust + 3);
+        this.addNews(`แต่งตั้งรัฐมนตรีเงา: ${mp.name}`, `${mp.name}รับหน้าที่รัฐมนตรีเงากระทรวง${ministryName} ทำหน้าที่ตรวจสอบและวิจารณ์การทำงานของรัฐบาลด้านนี้`);
+        ui.updateMain();
+    },
+
+    stanceOnPolicy(pName, stance) {
+        if (state.player.party.status !== "Opposition") { alert("เฉพาะฝ่ายค้านเท่านั้นที่แสดงจุดยืนต่อร่างกฎหมายรัฐบาลได้"); return; }
+        const p = state.activePolicies.find(x => x.name === pName);
+        if (!p) return;
+        const proposerMP = state.leaders.find(l => l.name === p.proposer);
+        if (p.proposer === "รัฐบาล" ? state.player.party.status === "Government" : proposerMP?.party.id === state.player.party.id) {
+            alert("นี่คือร่างกฎหมายของพรรคท่านเอง"); return;
+        }
+        const cost = 3000000;
+        if (state.player.personalFunds < cost) { alert(`เงินส่วนตัวไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        state.player.personalFunds -= cost;
+        // Same saturation pattern as lobbyIndividual()/campaignProvince(): repeating the same
+        // press line on the same bill gets less effective each time.
+        const satMultiplier = 1 - (p.oppStanceSaturation || 0) / 100;
+        const amount = 10 * satMultiplier;
+        if (stance === "oppose") {
+            p.oppositionLobby = (p.oppositionLobby || 0) + amount;
+            this.addNews(`ฝ่ายค้านคัดค้าน: ${p.name}`, `${state.player.party.name}ออกแถลงการณ์คัดค้านร่างนี้ต่อสาธารณะ`);
+        } else {
+            p.coalitionBoost = (p.coalitionBoost || 0) + amount;
+            this.addNews(`ฝ่ายค้านสนับสนุน: ${p.name}`, `${state.player.party.name}ประกาศสนับสนุนร่างนี้อย่างเปิดเผย แม้เป็นร่างของรัฐบาล`);
+        }
+        p.oppStanceSaturation = Math.min(100, (p.oppStanceSaturation || 0) + 35);
+        ui.updateMain();
+    },
+
+    negotiateAlliance(partyId) {
+        if (state.player.party.status !== "Opposition") { alert("เฉพาะฝ่ายค้านเท่านั้นที่เจรจาพันธมิตรก่อนเลือกตั้งได้"); return; }
+        const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+        if (daysToElection > 365) { alert("เจรจาพันธมิตรได้เฉพาะช่วงใกล้เลือกตั้ง (ภายใน 1 ปี)"); return; }
+        const partner = state.parties.find(p => p.id === partyId);
+        if (!partner || partner.id === state.player.party.id || partner.status === "Government") return;
+        const cost = 15000000;
+        if (state.player.personalFunds < cost) { alert(`เงินส่วนตัวไม่พอ (ต้องการ ฿${(cost/1e6).toFixed(1)}M)`); return; }
+        state.player.personalFunds -= cost;
+
+        // Same conflict check assignGovernmentStatus() itself uses -- a party won't commit to a
+        // pact with someone whose ideology it's actively opposed to, and low trust (the same
+        // field processQuidProQuo() spends/builds) makes even a compatible party wary.
+        const conflict = state.player.party.ideologies.some(i => partner.ideologies.some(gi => ideologiesConflict(i, gi)));
+        const successChance = conflict ? 20 : 60 + ((partner.trust ?? 70) - 70) * 0.5;
+        if (Math.random() * 100 > successChance) {
+            this.addNews(`เจรจาพันธมิตรล้มเหลว`, `${partner.name}ปฏิเสธข้อเสนอเป็นพันธมิตรก่อนการเลือกตั้งกับ${state.player.party.name}`);
+            ui.updateMain(); return;
+        }
+        state.player.party.electoralPactWith = partner.id;
+        partner.electoralPactWith = state.player.party.id;
+        this.addNews(`จับมือพันธมิตรก่อนเลือกตั้ง`, `${state.player.party.name}และ${partner.name}ตกลงร่วมมือกันหากได้เสียงข้างมากในการเลือกตั้งครั้งหน้า`);
+        ui.updateMain();
+    },
+
     runElection() {
         gameClock.setSpeed(0); ui.resetModalState();
 
@@ -1318,6 +1635,10 @@ export const engine = {
         state.provinces.forEach(p => { p.playerCampaignBoost = 0; });
 
         this.assignGovernmentStatus(state.parties);
+        // AI Party Personality (Stage C4): a party punished hard enough by this election -- lost
+        // government or lost over a quarter of its prior seats -- gets a chance to actually
+        // change instead of running back the same losing pitch next term.
+        this.applyElectionPunishment(results);
         Object.values(Data.MINISTRIES).forEach(m => { m.currentMinister = null; }); // new term, new cabinet to appoint
         state.activePolicies = [];
         state.voteModifier = null; state.lastVoteResults = null; state.lastVoteLog = [];
@@ -1379,6 +1700,42 @@ export const engine = {
         this.addNews("ผลการเลือกตั้งทั่วไปประกาศแล้ว", won ? "พรรคท่านยังคงจัดตั้งรัฐบาลได้ต่อไป" : "พรรคท่านไม่สามารถจัดตั้งรัฐบาลได้ในสมัยนี้ และจะทำหน้าที่ฝ่ายค้านในสภาชุดใหม่");
     },
 
+    // AI Party Personality (Stage C4): the roadmap's third ask -- "a party punished by the
+    // election should have a chance to change stance or leadership long-term". Only reacts to a
+    // real beating (lost government, or lost over a quarter of its prior seats), and even then
+    // doesn't always react (parties have inertia too), and skips the player's own party -- that
+    // stance is the player's call, not something scripted out from under them.
+    applyElectionPunishment(results) {
+        results.forEach(r => {
+            const party = r.party;
+            if (party.id === state.player.party.id) return;
+            const seatLossRatio = r.prevSeats > 0 ? (r.prevSeats - r.seats) / r.prevSeats : 0;
+            const lostPower = r.prevStatus === "Government" && party.status !== "Government";
+            if (seatLossRatio <= 0.25 && !lostPower) return;
+            if (Math.random() < 0.5) return;
+
+            if (Math.random() < 0.5) {
+                // Stance change: swap one held ideology for one the party doesn't currently hold.
+                const pool = Data.IDEOLOGY_POOL.filter(i => !party.ideologies.includes(i));
+                if (pool.length === 0) return;
+                const outIdx = Math.floor(Math.random() * party.ideologies.length);
+                const dropped = party.ideologies[outIdx];
+                const added = pool[Math.floor(Math.random() * pool.length)];
+                party.ideologies[outIdx] = added;
+                this.addNews(`${party.name} ปรับจุดยืนใหม่`, `หลังพ่ายศึกเลือกตั้งอย่างหนัก พรรคเปลี่ยนแนวทางจาก${dropped}สู่${added}`);
+            } else {
+                // Leadership change: a fresh leader resets standing with coalition partners and
+                // brings their own priority lean, same shared roll party creation uses.
+                party.trust = Math.min(100, Math.max(party.trust ?? 70, 60) + 15);
+                party.dependence = 0;
+                const newPriority = generatePartyPriority();
+                party.priority = { ...newPriority }; party.basePriority = newPriority;
+                party.popularity = Math.min(100, (party.popularity || 0) + 3);
+                this.addNews(`${party.name} เปลี่ยนหัวหน้าพรรค`, `หลังพ่ายศึกเลือกตั้งอย่างหนัก พรรคเปลี่ยนผู้นำใหม่พร้อมทิศทางใหม่`);
+            }
+        });
+    },
+
     triggerNoConfidence() {
         gameClock.setSpeed(0); ui.resetModalState();
         document.getElementById('event-title').innerText = `ศึกอภิปรายไม่ไว้วางใจ`;
@@ -1400,6 +1757,9 @@ export const engine = {
         });
         document.getElementById('vote-count-yes').innerText = yes; document.getElementById('vote-count-no').innerText = no;
         const ousted = yes > Data.MAJORITY_SEATS;
+        // Same venting triggerCrisis() does for whichever pressure caused it -- resolved either
+        // way, so it doesn't sit maxed out and immediately re-roll next month.
+        state.world.coalitionCollapsePressure = ousted ? 0 : Math.max(0, state.world.coalitionCollapsePressure - 40);
         // Long Campaign (Phase 7): being ousted mid-term used to end the game (location.reload()).
         // Now the PM's own party is forced into Opposition -- seats don't change, so letting
         // assignGovernmentStatus() run on the full list would just hand government straight back
@@ -1492,6 +1852,10 @@ export const engine = {
                 score += ((mp.party.trust ?? 70) - 70) * 0.6;
             }
             score += (p.coalitionBoost || 0);
+            // Opposition Gameplay v2 (Stage C5): stanceOnPolicy('oppose') builds this up the same
+            // way processQuidProQuo() builds coalitionBoost -- a public opposition campaign
+            // against a bill is real pressure on the floor, not just flavor text.
+            score -= (p.oppositionLobby || 0);
             if (state.voteModifier && mp.party.id === state.voteModifier.partyId) {
                 if (state.voteModifier.type === 'support') score += 100; if (state.voteModifier.type === 'rebel') score -= 100;
             }

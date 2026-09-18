@@ -117,6 +117,7 @@ export const ui = {
         if(activeTab?.includes('administration')) { this.renderCabinet(); this.renderActivePolicies(); }
         if(activeTab?.includes('dashboard')) { this.renderDashboard(); }
         if(activeTab?.includes('mps')) { this.renderMPList(); } // Maintain MP list update
+        if(activeTab?.includes('party-hq')) { this.renderOppositionCommandCenter(); }
     },
     
     // --- 1. DASHBOARD (ปรับใหม่: Newspaper Layout) ---
@@ -128,6 +129,7 @@ export const ui = {
         this.renderContextPanel();
         this.renderEconomyPanel();
         this.renderSocietyPanel();
+        this.renderEarlyWarningPanel();
         this.renderBattlegroundPanel();
     },
 
@@ -231,6 +233,34 @@ export const ui = {
                 <div class="flex justify-between text-[9px] text-stone-500 mt-0.5"><span>รัฐบาล ${b.govSupport.toFixed(0)}%</span><span>ฝ่ายค้าน ${b.oppSupport.toFixed(0)}%</span></div>
             </button>
         `).join('');
+    },
+
+    // Early Warning System (Stage C2): all four pressures (Stage C1) on one board with a
+    // trend arrow and a Low/Elevated/High/Critical risk read, each with its own why-button --
+    // so a crisis, when it comes, is something the player already saw building, not a bolt from
+    // the blue. goodDirection is always -1: every one of these is a risk gauge, rising is bad.
+    renderEarlyWarningPanel() {
+        const cont = document.getElementById('early-warning-panel'); if (!cont) return;
+        const PRESSURES = [
+            { key: 'protestPressure', label: 'แรงกดดันประท้วง', icon: 'fa-people-group', breakdownFn: 'getPressureBreakdown' },
+            { key: 'coalitionCollapsePressure', label: 'ความเสี่ยงพรรคร่วมแตก', icon: 'fa-handshake-slash', breakdownFn: 'getCoalitionCollapseBreakdown' },
+            { key: 'economicCrisisPressure', label: 'ความเสี่ยงวิกฤตเศรษฐกิจ', icon: 'fa-money-bill-trend-down', breakdownFn: 'getEconomicCrisisBreakdown' },
+            { key: 'coupPressure', label: 'ความเสี่ยงรัฐประหาร', icon: 'fa-shield-halved', breakdownFn: 'getCoupBreakdown' }
+        ];
+        const RISK_LABELS = { Low: ["ต่ำ", "text-emerald-700", "bg-emerald-600"], Elevated: ["เริ่มสูง", "text-amber-700", "bg-amber-500"], High: ["สูง", "text-red-700", "bg-red-600"], Critical: ["วิกฤต", "text-red-900", "bg-red-900"] };
+        cont.innerHTML = PRESSURES.map(p => {
+            const value = state.world[p.key] ?? 0;
+            const level = value > 75 ? "Critical" : value > 50 ? "High" : value > 25 ? "Elevated" : "Low";
+            const [levelLabel, textColor, barColor] = RISK_LABELS[level];
+            return `
+            <button onclick="ui.showWhy('${p.label}', engine.${p.breakdownFn}(), -1)" class="w-full text-left border-2 border-black p-2.5 hover:bg-stone-50 transition">
+                <div class="flex justify-between items-center text-[10px] mb-1">
+                    <span class="font-bold"><i class="fas ${p.icon} mr-1"></i>${p.label} ${this.trendArrow(p.key, -1)}</span>
+                    <span class="font-bold ${textColor}">${levelLabel} &middot; ${value.toFixed(0)}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-stone-200 border border-black"><div class="h-full ${barColor}" style="width:${value}%"></div></div>
+            </button>`;
+        }).join('');
     },
 
     renderNationalStats() {
@@ -464,11 +494,100 @@ export const ui = {
             `<span class="bg-black text-white px-2 py-1 text-[10px] font-bold uppercase border border-black mr-1">${i}</span>`
         ).join("");
         
-        document.getElementById('my-party-goals').innerHTML = p.goals.map(g => 
+        document.getElementById('my-party-goals').innerHTML = p.goals.map(g =>
             `<span class="bg-white text-black px-2 py-1 text-[10px] font-bold uppercase border border-black mr-1">${g}</span>`
         ).join("");
-        
+
         // Update transparency bar manually if needed (omitted for brevity, handled in main loop usually)
+        this.renderOppositionCommandCenter();
+    },
+
+    // Opposition Gameplay v2 (Stage C5): shown only while the player's party is actually in
+    // opposition -- the roadmap's own point is that opposition needs its own goal (build a path
+    // back to power), not a permanently-visible watered-down copy of the government's screen.
+    renderOppositionCommandCenter() {
+        const cont = document.getElementById('opposition-command-center'); if (!cont) return;
+        if (state.player.party.status !== "Opposition") {
+            cont.innerHTML = `<div class="text-stone-400 italic text-xs p-6 border-2 border-dashed border-stone-300 text-center">ศูนย์บัญชาการฝ่ายค้านใช้งานได้เฉพาะขณะพรรคท่านเป็นฝ่ายค้าน</div>`;
+            return;
+        }
+
+        const myParty = state.player.party;
+        const pactPartner = myParty.electoralPactWith ? state.parties.find(p => p.id === myParty.electoralPactWith) : null;
+        const blocSeats = myParty.seats + (pactPartner ? pactPartner.seats : 0);
+        const seatsNeeded = Math.max(0, Data.MAJORITY_SEATS + 1 - blocSeats);
+
+        const shadowGrid = Object.entries(Data.MINISTRIES).map(([n, d]) => {
+            const mpId = state.player.shadowCabinet?.[n];
+            const mp = mpId ? state.leaders.find(l => l.id === mpId) : null;
+            return `
+            <button onclick="ui.showShadowCabinetModal('${n}')" class="relative p-2 border border-stone-400 bg-white hover:bg-black hover:text-white hover:border-black transition flex flex-col items-center gap-1 group text-center">
+                <i class="fas ${d.icon} text-lg text-stone-400 group-hover:text-white"></i>
+                <span class="text-[9px] font-bold uppercase">${n}</span>
+                <span class="text-[8px] font-bold ${mp ? 'text-emerald-700 group-hover:text-emerald-300' : 'text-stone-400 group-hover:text-stone-300'}">${mp ? mp.name : 'ว่าง'}</span>
+            </button>`;
+        }).join('');
+
+        // Government bills open for a public stance: proposer is "รัฐบาล" (player's own
+        // government-tabled bills, which can't happen while the player is opposition, so this
+        // only ever matches the AI government's) or an MP from any non-player party.
+        const govBills = state.activePolicies.filter(p => {
+            const proposerMP = state.leaders.find(l => l.name === p.proposer);
+            return p.proposer === "รัฐบาล" || (proposerMP && proposerMP.party.id !== myParty.id);
+        });
+        const billRows = govBills.length > 0 ? govBills.map(p => `
+            <div class="flex justify-between items-center p-2 border border-stone-200 bg-white text-xs">
+                <div><div class="font-bold">${p.name}</div><div class="text-[9px] text-stone-500">เสนอโดย ${p.proposer}</div></div>
+                <div class="flex gap-1 shrink-0">
+                    <button onclick="engine.stanceOnPolicy('${p.name}', 'oppose')" class="border border-red-700 text-red-700 px-2 py-1 text-[9px] font-bold uppercase hover:bg-red-700 hover:text-white transition">คัดค้าน</button>
+                    <button onclick="engine.stanceOnPolicy('${p.name}', 'support')" class="border border-emerald-700 text-emerald-700 px-2 py-1 text-[9px] font-bold uppercase hover:bg-emerald-700 hover:text-white transition">สนับสนุน</button>
+                </div>
+            </div>`).join('') : `<div class="text-stone-400 italic text-[10px] p-2">ไม่มีร่างกฎหมายของรัฐบาลอยู่ในวาระขณะนี้</div>`;
+
+        const candidates = state.parties.filter(p => p.status !== "Government" && p.id !== myParty.id);
+        const allyRows = candidates.map(p => {
+            const pact = myParty.electoralPactWith === p.id;
+            return `
+            <div class="flex justify-between items-center p-2 border border-stone-200 bg-white text-xs">
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full border border-black shrink-0" style="background:${p.color}"></span><div><div class="font-bold">${p.name}</div><div class="text-[9px] text-stone-500">${p.seats} ที่นั่ง &middot; ไว้ใจ ${(p.trust ?? 70).toFixed(0)}%</div></div></div>
+                ${pact ? `<span class="text-[9px] font-bold text-emerald-700 uppercase shrink-0">พันธมิตรแล้ว</span>` : `<button onclick="engine.negotiateAlliance('${p.id}')" class="border border-black px-2 py-1 text-[9px] font-bold uppercase hover:bg-black hover:text-white transition shrink-0">เจรจา (฿15M)</button>`}
+            </div>`;
+        }).join('');
+
+        cont.innerHTML = `
+            <h3 class="font-bold text-black mb-1 text-sm uppercase tracking-widest border-b-2 border-black pb-2">ศูนย์บัญชาการฝ่ายค้าน</h3>
+            <div class="flex justify-between items-baseline mb-6 mt-2 text-xs">
+                <span class="text-stone-500">ที่นั่งของพรรคท่าน${pactPartner ? ` + พันธมิตร (${pactPartner.name})` : ''}: <span class="font-bold text-black">${blocSeats}</span></span>
+                <span class="text-stone-500">ทางกลับสู่อำนาจ: ต้องการอีก <span class="font-bold text-black">${seatsNeeded}</span> ที่นั่ง</span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div>
+                    <div class="text-[10px] text-stone-500 uppercase font-bold mb-2">คณะรัฐมนตรีเงา (Shadow Cabinet)</div>
+                    <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">${shadowGrid}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-stone-500 uppercase font-bold mb-2">จุดยืนต่อร่างกฎหมายรัฐบาล</div>
+                    <div class="space-y-2 mb-6">${billRows}</div>
+                    <div class="text-[10px] text-stone-500 uppercase font-bold mb-2">เจรจาพันธมิตรก่อนเลือกตั้ง (ภายใน 1 ปีก่อนเลือกตั้ง)</div>
+                    <div class="space-y-2">${allyRows}</div>
+                </div>
+            </div>
+        `;
+    },
+
+    showShadowCabinetModal(mName) {
+        if (state.player.party.status !== "Opposition") return;
+        this.resetModalState();
+        let h = `<div class="space-y-2 max-h-[400px] overflow-y-auto scroll-custom p-1">`;
+        const myMPs = state.leaders.filter(l => l.party.id === state.player.party.id);
+        myMPs.forEach(l => {
+            h += `<div class="flex justify-between items-center p-3 border border-stone-200 bg-white hover:border-black transition"><div><div class="font-bold text-xs">${l.name}</div><div class="text-[9px] text-stone-500 uppercase">ชื่อเสียง ${l.prestige}%${l.shadowedMinistries?.[mName] ? ' &middot; เคยเป็นรัฐมนตรีเงากระทรวงนี้' : ''}</div></div><button onclick="engine.assignShadowMinister('${mName}', ${l.id}); document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="border border-black px-3 py-1 text-[9px] font-bold uppercase hover:bg-black hover:text-white transition">Select</button></div>`;
+        });
+        h += `</div>`;
+        document.getElementById('event-title').innerText = `รัฐมนตรีเงา: ${mName}`;
+        document.getElementById('event-desc').innerHTML = h;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 border border-black font-bold text-xs uppercase hover:bg-stone-300">Cancel</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
     },
 
     // --- PROVINCE MAP ---
