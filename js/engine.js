@@ -403,6 +403,47 @@ function getImplementationEffectiveness(p) {
     return { effectiveness, capacityMultiplier, fitMultiplier, fitLabel, budgetMultiplier, workload };
 }
 
+// AI Government Behavior v2 (Stage C3): aiPropose() used to grab a fully random MP and a fully
+// random policy template -- no reading of ideology, which faction is hurting, which national
+// stat is worst, coalition demand, or how close the next election is, exactly the gap the
+// roadmap calls out. Once a policy passes, finalizeVote() already runs it through
+// getImplementationEffectiveness() and the same faction/world-stat/foreign consequences a
+// player's own policy gets, regardless of who proposed it -- the "same state capacity, real
+// consequences" half of AI Government Behavior v2 was already true structurally; this is the
+// selection half.
+function scoreAIPolicy(template) {
+    let score = 0;
+    // Ideology: does this fit what the governing coalition actually stands for?
+    const govParties = state.parties.filter(p => p.status === "Government");
+    if (govParties.some(p => p.ideologies.includes(template.ideology))) score += 20;
+    // Faction pressure: a template that helps (positive impact on) a currently unhappy target
+    // faction is more urgent than one that helps a faction already doing fine.
+    const targetFaction = state.factions.find(f => f.name === template.target);
+    if (targetFaction && targetFaction.approval < 45 && (template.impact?.[template.target] || 0) > 0) {
+        score += (45 - targetFaction.approval) * 0.8;
+    }
+    // Economic context: reward whichever national stat this policy actually improves, weighted
+    // by how far that stat currently sits from where it should be.
+    Object.entries(template.worldImpact || {}).forEach(([stat, impact]) => {
+        const meta = Data.WORLD_STAT_META[stat]; if (!meta) return;
+        const value = state.world[stat] ?? meta.baseline;
+        const badness = meta.goodDirection > 0 ? Math.max(0, meta.baseline - value) : Math.max(0, value - meta.baseline);
+        const helps = meta.goodDirection > 0 ? impact > 0 : impact < 0;
+        if (helps) score += badness * 0.5;
+    });
+    // Coalition demand: the neediest partner (highest dependence -- Phase 3) gets some weight
+    // toward whatever it's actually pushing for, the same way a real coalition partner would.
+    const neediest = govParties.filter(p => p.id !== state.player.party.id).sort((a, b) => (b.dependence || 0) - (a.dependence || 0))[0];
+    if (neediest && (neediest.ideologies.includes(template.ideology) || neediest.goals.includes(template.goal))) {
+        score += (neediest.dependence || 0) * 0.3;
+    }
+    // Election proximity: with a vote coming up, a bill that can actually land before polling
+    // day is worth more than one still in committee -- prefer faster deliberation times.
+    const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+    if (daysToElection < 180) score += Math.max(0, 60 - template.delibTime) * 0.3;
+    return score;
+}
+
 // Economy v2 (Phase 5): what share of the country's actual current output rides on trade versus
 // domestic factors. Every industry has *some* trade term since PR #13/#17, so a binary
 // has-a-partner check would always read 100% and say nothing -- instead this weighs each
@@ -553,7 +594,18 @@ export const gameClock = {
         ));
         state.world.coupPressure = Math.max(0, Math.min(100, state.world.coupPressure + (targetCoupPressure - state.world.coupPressure) * 0.05 * state.speed));
 
-        if(crossedDayOfMonth(prevDate, state.date, 15) && Math.random() < 0.1) engine.aiPropose();
+        if(crossedDayOfMonth(prevDate, state.date, 15)) {
+            // Proposal frequency now scales with urgency instead of a flat 10% roll -- a
+            // government sitting on rising pressure or a close election should legislate more
+            // often, not the same trickle as a calm term. Capped well under 1 so a bad month
+            // doesn't guarantee a proposal every tick, which would itself become a spending
+            // feedback loop worth checking for in calm-baseline testing (same class of bug as
+            // the Stage C1 economicCrisisPressure spiral).
+            const urgency = Math.max(state.world.protestPressure, state.world.economicCrisisPressure, state.world.coalitionCollapsePressure) / 100;
+            const daysToElection = state.world.electionDay ? Math.round((state.world.electionDay - state.date) / 86400000) : 9999;
+            const proposeChance = 0.1 + urgency * 0.15 + (daysToElection < 180 ? 0.1 : 0);
+            if (Math.random() < proposeChance) engine.aiPropose();
+        }
         // Coalition Collapse Pressure now gates and scales this instead of a flat 0.05 roll behind
         // a hard approval/stability AND-gate -- a floor of 20 keeps ordinary governing from ever
         // rolling at all, same effective floor the old gate provided. player.position is just the
@@ -1183,10 +1235,14 @@ export const engine = {
     },
 
     aiPropose() {
-        const aiMP = state.leaders[Math.floor(Math.random()*state.leaders.length)];
-        const temp = Data.POLICY_TEMPLATES[Math.floor(Math.random()*Data.POLICY_TEMPLATES.length)];
-        if (aiMP.party.status === "Government" && temp.cost > state.world.nationalBudget * 0.1) return;
-        this.propose(temp, `${aiMP.name}`);
+        const candidates = Data.POLICY_TEMPLATES.filter(t => !state.activePolicies.some(x => x.name === t.name));
+        if (candidates.length === 0) return;
+        const scored = candidates.map(t => ({ t, score: scoreAIPolicy(t) })).sort((a, b) => b.score - a.score);
+        const picked = scored[Math.floor(Math.random() * Math.min(3, scored.length))].t;
+        const govMPs = state.leaders.filter(l => l.party.status === "Government");
+        const aiMP = govMPs.length > 0 ? govMPs[Math.floor(Math.random()*govMPs.length)] : state.leaders[Math.floor(Math.random()*state.leaders.length)];
+        if (aiMP.party.status === "Government" && picked.cost > state.world.nationalBudget * 0.1) return;
+        this.propose(picked, `${aiMP.name}`);
     },
 
     partyWhip() {
