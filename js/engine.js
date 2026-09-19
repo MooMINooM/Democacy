@@ -621,6 +621,59 @@ function getLegacyBreakdown(partyOrName) {
     };
 }
 
+// UI/Explainability (Balance Pass v1 Phase 6): "สรุปปีล่าสุด: สิ่งที่ดีขึ้น/แย่ลง/ความเสี่ยง" --
+// compares live current stats against yearStartSnapshot (tick()/init() freeze one at the start of
+// each calendar year), same before/after comparison the doc's own Monte Carlo phase used, just
+// live and readable in the UI instead of an offline script. A stat under its noise threshold
+// (deliberately larger than a rounding error, smaller than what a single event usually moves)
+// shows in neither list rather than cluttering the summary with noise.
+function getAnnualSummary() {
+    const snap = state.world.yearStartSnapshot;
+    if (!snap) return { improved: [], worsened: [], risks: [], sinceDate: null };
+    const cost = state.world.costOfLiving;
+    const avgCostNow = (cost.food + cost.energy + cost.housing + cost.industrial + cost.transport) / 5;
+    const compare = (label, curr, prev, goodDirection, threshold) => {
+        const delta = curr - prev;
+        if (Math.abs(delta) < threshold) return null;
+        return { label, delta: +delta.toFixed(1), isGood: goodDirection > 0 ? delta > 0 : delta < 0 };
+    };
+    const items = [
+        compare("ความนิยมรัฐบาล", state.world.approval, snap.approval, 1, 1),
+        compare("อัตราการเติบโตเศรษฐกิจ", state.world.growth, snap.growth, 1, 0.3),
+        compare("ความโปร่งใส", state.world.transparency, snap.transparency, 1, 2),
+        compare("เสถียรภาพคณะรัฐมนตรี", state.world.cabinetStability, snap.cabinetStability, 1, 2),
+        compare("ค่าครองชีพเฉลี่ย", avgCostNow, snap.avgCostOfLiving, -1, 1),
+        compare("ชื่อเสียงระยะยาวของพรรคท่าน", state.player.party.legacyTrust ?? 60, snap.legacyTrust, 1, 1),
+        compare("ที่นั่งของพรรคท่านในสภา", state.player.party.seats, snap.seats, 1, 1),
+        compare("งบประเทศ", state.world.nationalBudget / 1e9, snap.nationalBudget / 1e9, 1, 5),
+    ].filter(Boolean);
+    const risks = [];
+    [["protestPressure", "แรงกดดันประท้วง"], ["coalitionCollapsePressure", "ความเสี่ยงพรรคร่วมแตก"],
+     ["economicCrisisPressure", "ความเสี่ยงวิกฤตเศรษฐกิจ"], ["coupPressure", "ความเสี่ยงรัฐประหาร"],
+     ["fiscalStress", "ภาวะการคลังตึงตัว"]].forEach(([key, label]) => {
+        const v = state.world[key] ?? 0;
+        if (v > 25) risks.push({ label, value: +v.toFixed(0), level: v > 75 ? "วิกฤต" : v > 50 ? "สูง" : "เริ่มสูง" });
+    });
+    return { improved: items.filter(i => i.isGood), worsened: items.filter(i => !i.isGood), risks, sinceDate: snap.date };
+}
+
+// UI/Explainability (Balance Pass v1 Phase 6): "Timeline เหตุการณ์สำคัญของรัฐบาล" -- merges the
+// player's own party legacyHistory (broken promises, ideology flips, confidence votes survived/
+// lost) with the national crisisTriggerLog (coup/no-confidence triggers) into one chronological
+// read, sorted by the real timestamp both logs now carry (their display date strings are Thai
+// Buddhist-calendar D/M/Y text, not sortable). Both source logs are already the curated,
+// significant-event lists (not routine monthly noise), so no extra filtering needed here.
+function getGovernmentTimeline() {
+    const party = state.player.party;
+    const legacyEvents = (party.legacyHistory || []).map(e => ({ date: e.date, ts: e.ts ?? 0, label: e.label, delta: e.delta, kind: 'legacy' }));
+    const crisisEvents = (state.crisisTriggerLog || []).map(e => ({
+        date: e.date, ts: e.ts ?? 0,
+        label: e.type === 'coup' ? 'ความกดดันรัฐประหารถึงจุดวิกฤต' : 'ญัตติไม่ไว้วางใจถูกยื่น',
+        delta: null, kind: e.type
+    }));
+    return [...legacyEvents, ...crisisEvents].sort((a, b) => b.ts - a.ts);
+}
+
 // Faction Response v2 (Stage D2): a faction used to feel a policy's impact.<factionName> exactly
 // as written on the template, every time, in every era -- getImplementationEffectiveness() above
 // already scales the LEGAL effect down by state capacity, but the raw number a faction actually
@@ -1110,6 +1163,24 @@ export const gameClock = {
 
         if (crossedMonthBoundary(prevDate, state.date)) engine.processMonthlyUpdate();
 
+        // UI/Explainability (Balance Pass v1 Phase 6): "สรุปปีล่าสุด" -- a frozen snapshot of the
+        // key stats taken once at the start of each calendar year, so getAnnualSummary() can
+        // compare the live current numbers against where the year began, instead of the player
+        // having to remember. Overwritten once a year, at the boundary, so it always reads
+        // "since this year started" for the rest of the year.
+        if (prevDate.getFullYear() !== state.date.getFullYear()) {
+            const cost = state.world.costOfLiving;
+            state.world.yearStartSnapshot = {
+                date: state.date.toLocaleDateString('th-TH'),
+                approval: state.world.approval, growth: state.world.growth,
+                transparency: state.world.transparency, cabinetStability: state.world.cabinetStability,
+                avgCostOfLiving: (cost.food + cost.energy + cost.housing + cost.industrial + cost.transport) / 5,
+                legacyTrust: state.player.party.legacyTrust ?? 60,
+                seats: state.player.party.seats,
+                nationalBudget: state.world.nationalBudget,
+            };
+        }
+
         const daysToElection = Math.round((state.world.electionDay - state.date) / 86400000);
         const prevDaysToElection = Math.round((state.world.electionDay - prevDate) / 86400000);
         [180, 90, 30, 7].forEach(threshold => {
@@ -1124,7 +1195,7 @@ export const gameClock = {
 };
 
 export const engine = {
-    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getFactionApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvinceVoteShare, getProvinceVoteShareBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier, getEffectivenessBreakdown, getLegacyBreakdown, getFiscalStressBreakdown, getBudgetCoverage,
+    getNationalContext, getProvinceContext, getPressureBreakdown, getApprovalBreakdown, getFactionApprovalBreakdown, getGrowthBreakdown, getCabinetStabilityBreakdown, getMPElectoralRisk, getImplementationEffectiveness, getTradeExposure, getProductionBreakdown, getSocietyContext, getClassCompositionBreakdown, getPoliticalClimateBreakdown, getProvinceVoteShare, getProvinceVoteShareBreakdown, getProvincePoliticalLayer, getBattlegroundProvinces, getCoalitionCollapseBreakdown, getEconomicCrisisBreakdown, getCoupBreakdown, getCostOfLivingBreakdown, getFactionResponseBreakdown, getFactionResponseMultiplier, getEffectivenessBreakdown, getLegacyBreakdown, getFiscalStressBreakdown, getBudgetCoverage, getAnnualSummary, getGovernmentTimeline,
 
     init() {
         state.voteModifier = null;
@@ -1193,6 +1264,22 @@ export const engine = {
         // unemployment/industry-mix numbers from turn one, not a flat 50 every game opens on
         // regardless of the province/industry mix just generated above.
         state.world.costOfLiving = getCostOfLivingTarget();
+
+        // UI/Explainability (Balance Pass v1 Phase 6): day one counts as "the start of this year"
+        // too, so getAnnualSummary() has something to compare against immediately instead of
+        // reading empty until the first real year boundary (crossed in tick()) almost a year in.
+        {
+            const cost = state.world.costOfLiving;
+            state.world.yearStartSnapshot = {
+                date: state.date.toLocaleDateString('th-TH'),
+                approval: state.world.approval, growth: state.world.growth,
+                transparency: state.world.transparency, cabinetStability: state.world.cabinetStability,
+                avgCostOfLiving: (cost.food + cost.energy + cost.housing + cost.industrial + cost.transport) / 5,
+                legacyTrust: state.player.party.legacyTrust ?? 60,
+                seats: state.player.party.seats,
+                nationalBudget: state.world.nationalBudget,
+            };
+        }
 
         ui.renderCabinet(); ui.renderMinistryList();
         this.addNews("สภาสมัยประชุมเริ่มต้น", "สส. 500 ท่านเข้าประจำการเพื่อขับเคลื่อนแผ่นดิน");
@@ -1449,7 +1536,10 @@ export const engine = {
         this.recomputeLegacyTrust(party);
 
         party.legacyHistory = party.legacyHistory || [];
-        party.legacyHistory.unshift({ date: state.date.toLocaleDateString('th-TH'), label, delta: +scaledDelta.toFixed(1), dimension, tier });
+        // Balance Pass v1 Phase 6: ts alongside the display-formatted date -- state.date.toLocaleDateString('th-TH')
+        // (Thai Buddhist calendar, D/M/Y) can't be re-parsed back into real chronological order,
+        // which getGovernmentTimeline() below needs to merge this log with crisisTriggerLog.
+        party.legacyHistory.unshift({ date: state.date.toLocaleDateString('th-TH'), ts: state.date.getTime(), label, delta: +scaledDelta.toFixed(1), dimension, tier });
         if (party.legacyHistory.length > 20) party.legacyHistory.length = 20;
     },
 
@@ -1471,7 +1561,7 @@ export const engine = {
     // legacyHistory so a long game doesn't grow this unbounded.
     logCrisisTrigger(type, breakdown, pressure, rollChance, roll) {
         state.crisisTriggerLog = state.crisisTriggerLog || [];
-        state.crisisTriggerLog.unshift({ date: state.date.toLocaleDateString('th-TH'), type, breakdown, pressure: +pressure.toFixed(1), rollChance: +rollChance.toFixed(4), roll: +roll.toFixed(4) });
+        state.crisisTriggerLog.unshift({ date: state.date.toLocaleDateString('th-TH'), ts: state.date.getTime(), type, breakdown, pressure: +pressure.toFixed(1), rollChance: +rollChance.toFixed(4), roll: +roll.toFixed(4) });
         if (state.crisisTriggerLog.length > 50) state.crisisTriggerLog.length = 50;
     },
 
