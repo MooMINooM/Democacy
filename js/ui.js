@@ -60,6 +60,18 @@ export const ui = {
         // "why" breakdown, so the player sees direction before even opening it.
         const trends = { 'hud-approval-trend': 'approval', 'stat-cabinet-stability-trend': 'cabinetStability', 'stat-growth-trend': 'growth' };
         for (const [id, key] of Object.entries(trends)) { const el = document.getElementById(id); if (el) el.innerHTML = this.trendArrow(key); }
+
+        // Fiscal Emergency (Balance Pass v1): a warning before the crisis point, not just a status
+        // that appears once the government is already there -- amber once fiscalStress crosses the
+        // same 50 threshold the watch-level news fires at, red once fiscalEmergency itself is true.
+        const coverageEl = document.getElementById('hud-fiscal-coverage');
+        if (coverageEl) {
+            const coverage = (state.world.budgetCoverage ?? 100).toFixed(0);
+            const stress = state.world.fiscalStress ?? 0;
+            if (state.world.fiscalEmergency) { coverageEl.textContent = `⚠ ฉุกเฉิน (${coverage}%)`; coverageEl.className = "text-[9px] font-mono font-bold hover:underline text-red-700"; }
+            else if (stress > 50) { coverageEl.textContent = `เฝ้าระวัง (${coverage}%)`; coverageEl.className = "text-[9px] font-mono font-bold hover:underline text-amber-700"; }
+            else { coverageEl.textContent = `คุ้มครอง ${coverage}%`; coverageEl.className = "text-[9px] font-mono font-bold hover:underline text-stone-400"; }
+        }
     },
 
     // Explainability (Phase 2): compares the last two monthly snapshots (state.history.*, the
@@ -120,11 +132,65 @@ export const ui = {
         const p = state.parties.find(x => x.id === partyId); if (!p) return;
         document.getElementById('event-title').innerText = `ประวัติระยะยาว: ${p.name}`;
         const history = p.legacyHistory || [];
-        let h = `<div class="text-xs text-stone-500 mb-3">ชื่อเสียงระยะยาวปัจจุบัน: <span class="font-mono font-bold text-black">${(p.legacyTrust ?? 60).toFixed(0)}%</span></div><div class="space-y-2 max-h-[350px] overflow-y-auto scroll-custom">`;
+        // Legacy Trust v2 (Balance Pass v1): the overall % is now a blend of four sub-scores --
+        // this why-button opens the same breakdown getLegacyBreakdown() computes, one level up
+        // from the raw event log below.
+        let h = `<button onclick="ui.showWhy('Legacy Trust: ${p.name}', engine.getLegacyBreakdown('${p.name}'))" class="w-full text-left mb-3 pb-2 border-b-2 border-black hover:bg-stone-50 transition"><div class="flex justify-between items-center text-xs"><span class="text-stone-500">ชื่อเสียงระยะยาวปัจจุบัน <i class="fas fa-circle-question text-stone-300"></i></span><span class="font-mono font-bold text-black text-sm">${(p.legacyTrust ?? 60).toFixed(0)}%</span></div></button><div class="space-y-2 max-h-[350px] overflow-y-auto scroll-custom">`;
         if (history.length === 0) h += `<div class="italic text-stone-400 text-center">ยังไม่มีเหตุการณ์สำคัญบันทึกไว้</div>`;
         history.forEach(ev => {
             const color = ev.delta > 0 ? 'text-emerald-700' : (ev.delta < 0 ? 'text-red-700' : 'text-stone-400');
             h += `<div class="flex justify-between border-b border-stone-200 pb-1"><div><div class="text-sm">${ev.label}</div><div class="text-[9px] text-stone-400 font-mono">${ev.date}</div></div><span class="font-mono font-bold ${color}">${ev.delta > 0 ? '+' : ''}${ev.delta}</span></div>`;
+        });
+        h += `</div>`;
+        document.getElementById('event-desc').innerHTML = h;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
+
+    // UI/Explainability (Balance Pass v1 Phase 6): "สรุปปีล่าสุด: สิ่งที่ดีขึ้น/แย่ลง/ความเสี่ยง" --
+    // engine.getAnnualSummary()'s three lists, laid out the same way showLegacyHistory() above
+    // does (event-desc as a scrollable list, not the single-value showWhy() format, since this is
+    // several distinct items at once).
+    showAnnualSummary() {
+        this.resetModalState();
+        document.getElementById('event-title').innerText = `สรุปสถานการณ์ปีนี้`;
+        const s = engine.getAnnualSummary();
+        let h = `<div class="text-xs text-stone-500 mb-3">เทียบกับต้นปีนี้ (${s.sinceDate || '-'})</div><div class="space-y-4 max-h-[400px] overflow-y-auto scroll-custom">`;
+        const section = (label, icon, items, colorClass) => {
+            if (items.length === 0) return '';
+            let sh = `<div><div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2"><i class="fas ${icon} mr-1"></i>${label}</div><div class="space-y-1">`;
+            items.forEach(i => {
+                sh += `<div class="flex justify-between border-b border-stone-200 pb-1"><span class="text-sm">${i.label}</span><span class="font-mono font-bold ${colorClass}">${i.delta > 0 ? '+' : ''}${i.delta}</span></div>`;
+            });
+            return sh + `</div></div>`;
+        };
+        h += section('ดีขึ้น', 'fa-arrow-trend-up', s.improved, 'text-emerald-700');
+        h += section('แย่ลง', 'fa-arrow-trend-down', s.worsened, 'text-red-700');
+        if (s.risks.length > 0) {
+            h += `<div><div class="text-[9px] uppercase tracking-widest text-stone-500 font-bold mb-2"><i class="fas fa-triangle-exclamation mr-1"></i>ความเสี่ยงตอนนี้</div><div class="space-y-1">`;
+            s.risks.forEach(r => { h += `<div class="flex justify-between border-b border-stone-200 pb-1"><span class="text-sm">${r.label}</span><span class="font-mono font-bold text-amber-700">${r.level} &middot; ${r.value}%</span></div>`; });
+            h += `</div></div>`;
+        }
+        if (s.improved.length === 0 && s.worsened.length === 0 && s.risks.length === 0) h += `<div class="italic text-stone-400 text-center">ยังไม่มีการเปลี่ยนแปลงที่ชัดเจนในปีนี้</div>`;
+        h += `</div>`;
+        document.getElementById('event-desc').innerHTML = h;
+        document.getElementById('event-options').innerHTML = `<button onclick="document.getElementById('event-modal').classList.add('hidden'); gameClock.setSpeed(1);" class="w-full p-2 bg-stone-200 font-bold text-xs uppercase border border-black">Close</button>`;
+        document.getElementById('event-modal').classList.remove('hidden');
+    },
+
+    // UI/Explainability (Balance Pass v1 Phase 6): "Timeline เหตุการณ์สำคัญของรัฐบาล" --
+    // engine.getGovernmentTimeline()'s merged, chronologically-sorted read of legacyHistory and
+    // crisisTriggerLog together, same list layout as showLegacyHistory() above.
+    showGovernmentTimeline() {
+        this.resetModalState();
+        document.getElementById('event-title').innerText = `ไทม์ไลน์รัฐบาล: ${state.player.party.name}`;
+        const timeline = engine.getGovernmentTimeline();
+        let h = `<div class="space-y-2 max-h-[400px] overflow-y-auto scroll-custom">`;
+        if (timeline.length === 0) h += `<div class="italic text-stone-400 text-center">ยังไม่มีเหตุการณ์สำคัญบันทึกไว้</div>`;
+        const KIND_ICON = { legacy: 'fa-scroll', coup: 'fa-shield-halved', noConfidence: 'fa-gavel' };
+        timeline.forEach(ev => {
+            const color = ev.delta == null ? 'text-amber-700' : (ev.delta > 0 ? 'text-emerald-700' : (ev.delta < 0 ? 'text-red-700' : 'text-stone-400'));
+            h += `<div class="flex justify-between border-b border-stone-200 pb-1"><div><div class="text-sm"><i class="fas ${KIND_ICON[ev.kind] || 'fa-scroll'} text-stone-400 mr-1"></i>${ev.label}</div><div class="text-[9px] text-stone-400 font-mono">${ev.date}</div></div>${ev.delta != null ? `<span class="font-mono font-bold ${color}">${ev.delta > 0 ? '+' : ''}${ev.delta}</span>` : `<span class="font-mono font-bold ${color} text-[9px] uppercase">เหตุการณ์</span>`}</div>`;
         });
         h += `</div>`;
         document.getElementById('event-desc').innerHTML = h;
