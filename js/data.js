@@ -378,13 +378,20 @@ export const FACTION_IDEOLOGY_AFFINITY = {
 // already existed. sensitivity ties an industry's output to the national stats added in
 // Phase 4: a positive weight means the industry does better when that stat is high, a
 // negative weight means it does better when that stat is low.
+// Emergent Chain Verification (Balance Pass v1 Phase 5): the doc's own named chain --
+// "Energy cost up -> Industry down -> Unemployment up -> Faction approval down -> Seat risk up ->
+// MP rebellion" -- checked out end to end in code EXCEPT the very first link. Every stat named
+// here (environment/unemployment/education/military/crime) is a flat state.world[stat] read;
+// "energy" isn't one of those -- it lives nested at state.world.costOfLiving.energy, so it was
+// never actually reachable through this sensitivity map at all, for any industry. provinceOutput()
+// below now resolves a cost-of-living category name the same way it resolves a flat world stat.
 export const INDUSTRY_TYPES = {
     "เกษตรกรรม": { icon: "fa-wheat-awn", label: "เกษตรกรรม", baseOutput: 1.0, sensitivity: { environment: 0.4, unemployment: -0.2 } },
-    "อุตสาหกรรม": { icon: "fa-industry", label: "อุตสาหกรรม", baseOutput: 1.8, sensitivity: { education: 0.3, unemployment: -0.3, military: 0.15 } },
+    "อุตสาหกรรม": { icon: "fa-industry", label: "อุตสาหกรรม", baseOutput: 1.8, sensitivity: { education: 0.3, unemployment: -0.3, military: 0.15, energy: -0.3 } },
     "การท่องเที่ยว": { icon: "fa-umbrella-beach", label: "การท่องเที่ยว", baseOutput: 1.4, sensitivity: { crime: -0.4 } },
     "เทคโนโลยี": { icon: "fa-microchip", label: "เทคโนโลยี", baseOutput: 2.2, sensitivity: { education: 0.5 } },
     "ประมง": { icon: "fa-fish", label: "ประมงและทะเล", baseOutput: 1.0, sensitivity: { environment: 0.3 } },
-    "โลจิสติกส์และการส่งออก": { icon: "fa-truck-fast", label: "โลจิสติกส์และการส่งออก", baseOutput: 1.6, sensitivity: { crime: -0.3, unemployment: -0.2 } }
+    "โลจิสติกส์และการส่งออก": { icon: "fa-truck-fast", label: "โลจิสติกส์และการส่งออก", baseOutput: 1.6, sensitivity: { crime: -0.3, unemployment: -0.2, energy: -0.25 } }
 };
 export const REGION_INDUSTRY_DEFAULT = {
     "เหนือ": "เกษตรกรรม",

@@ -68,11 +68,16 @@ const UNEMPLOYED_BASELINE_POP = Data.FACTION_DATA.find(f => f.name === "คน�
 
 // A province's actual production, given its industry's base output, the national stats that
 // industry is sensitive to (Phase 4), and however much investment has built up there.
+const COST_OF_LIVING_CATEGORY_SET = new Set(Data.COST_OF_LIVING_CATEGORIES);
 function provinceOutput(prov) {
     const industry = Data.INDUSTRY_TYPES[prov.industry] || Data.INDUSTRY_TYPES["เกษตรกรรม"];
     let multiplier = 1 + ((prov.investmentLevel ?? 50) - 50) / 50 * 0.4;
     Object.entries(industry.sensitivity || {}).forEach(([stat, weight]) => {
-        const val = state.world[stat] ?? 50;
+        // Emergent Chain Verification (Balance Pass v1 Phase 5): a sensitivity key can now name
+        // either a flat state.world stat (environment, unemployment, ...) or one of the 5
+        // cost-of-living categories (state.world.costOfLiving.<cat>) -- resolved the same way
+        // either way, so "energy" above reads the real, live cost index instead of undefined.
+        const val = COST_OF_LIVING_CATEGORY_SET.has(stat) ? (state.world.costOfLiving?.[stat] ?? 50) : (state.world[stat] ?? 50);
         multiplier += ((val - 50) / 50) * weight;
     });
     // Trade exposure: each industry leans on the one foreign power that shares its keyIndustry
@@ -154,9 +159,15 @@ function getProvinceContext(prov) {
 function getProvinceVoteShare(prov) {
     const affinity = Data.FACTION_IDEOLOGY_AFFINITY[prov.baseFaction];
     const investmentSwing = ((prov.investmentLevel ?? 50) - 50) * 0.5;
+    // Emergent Chain Verification (Balance Pass v1 Phase 5): "local decline -> migration -> vote
+    // share change" -- a province genuinely emptying out (popTrend, the EMA the monthly migration
+    // update tracks) costs the incumbent on top of investmentLevel itself, not just through it.
+    // Scaled well under investmentSwing's own range (up to +-15 vs investmentSwing's up to +-25)
+    // since it's the secondary signal here, not the primary one.
+    const migrationSwing = (prov.popTrend ?? 0) * 3000;
     const weights = state.parties.map(p => {
         const bonus = affinity && p.ideologies.includes(affinity) ? 25 : 0;
-        const govBonus = p.status === "Government" ? investmentSwing : 0;
+        const govBonus = p.status === "Government" ? investmentSwing + migrationSwing : 0;
         const campaignBonus = p.id === state.player.party.id ? (prov.playerCampaignBoost || 0) : 0;
         // Long-term Political Memory (Stage D3): same legacyBonus term runProvinceElection()
         // itself uses, kept in sync deliberately -- otherwise this preview would show a
@@ -179,9 +190,13 @@ function getProvinceVoteShareBreakdown(provOrName, partyId) {
     if (!party) return {};
     const affinity = Data.FACTION_IDEOLOGY_AFFINITY[prov.baseFaction];
     const investmentSwing = ((prov.investmentLevel ?? 50) - 50) * 0.5;
+    const migrationSwing = (prov.popTrend ?? 0) * 3000;
     const terms = { "ความนิยมพรรคโดยรวม": party.popularity };
     if (affinity && party.ideologies.includes(affinity)) terms[`อุดมการณ์ตรงกับฐานเสียง${prov.baseFaction}`] = 25;
-    if (party.status === "Government") terms["ระดับการลงทุนในจังหวัด"] = investmentSwing;
+    if (party.status === "Government") {
+        terms["ระดับการลงทุนในจังหวัด"] = investmentSwing;
+        if (Math.abs(migrationSwing) > 0.1) terms[migrationSwing < 0 ? "ประชากรกำลังย้ายออก" : "ประชากรกำลังย้ายเข้า"] = migrationSwing;
+    }
     if (party.id === state.player.party.id && (prov.playerCampaignBoost || 0) > 0) terms["คะแนนหาเสียงสะสม"] = prov.playerCampaignBoost;
     terms["ชื่อเสียงระยะยาวของพรรค"] = ((party.legacyTrust ?? 60) - 60) * 0.4;
     return terms;
@@ -203,13 +218,21 @@ function getProvincePoliticalLayer(prov) {
     const industry = Data.INDUSTRY_TYPES[prov.industry];
     let localIssue = null;
     if (industry?.sensitivity) {
+        // Emergent Chain Verification (Balance Pass v1 Phase 5): a sensitivity key can now also
+        // name a cost-of-living category (see provinceOutput()) -- those live in
+        // Data.COST_OF_LIVING_META (label only, no per-stat baseline field, since every
+        // cost-of-living index shares the same 50 baseline) rather than Data.WORLD_STAT_META,
+        // which this used to assume unconditionally and crashed on "energy" reading `.baseline`
+        // off an undefined meta.
         const strains = Object.entries(industry.sensitivity).map(([stat, weight]) => {
-            const meta = Data.WORLD_STAT_META[stat];
-            const value = state.world[stat] ?? meta?.baseline ?? 50;
+            const isCost = COST_OF_LIVING_CATEGORY_SET.has(stat);
+            const meta = isCost ? Data.COST_OF_LIVING_META[stat] : Data.WORLD_STAT_META[stat];
+            const baseline = isCost ? 50 : (meta?.baseline ?? 50);
+            const value = isCost ? (state.world.costOfLiving?.[stat] ?? 50) : (state.world[stat] ?? baseline);
             // weight>0 means this industry wants the stat HIGH (bad = value below baseline);
             // weight<0 means it wants the stat LOW (bad = value above baseline) -- same sign
             // convention provinceOutput() itself reads these weights with.
-            const strain = weight > 0 ? (meta.baseline - value) * weight : (value - meta.baseline) * -weight;
+            const strain = weight > 0 ? (baseline - value) * weight : (value - baseline) * -weight;
             return { stat, label: meta?.label || stat, strain };
         }).sort((a, b) => b.strain - a.strain);
         if (strains[0]?.strain > 3) localIssue = strains[0].label;
@@ -491,9 +514,14 @@ function runProvinceElection() {
         // the same way. Scaled to match the affinity bonus (+/-25 at the extremes) so
         // pork-barrel spending is a real electoral lever, not just an economic one.
         const investmentSwing = ((prov.investmentLevel ?? 50) - 50) * 0.5;
+        // Emergent Chain Verification (Balance Pass v1 Phase 5): same migrationSwing term
+        // getProvinceVoteShare() uses, kept in sync for the same reason investmentSwing/legacyBonus
+        // already are here -- otherwise the preview would show a different picture than the real
+        // election it's meant to be a readable stand-in for.
+        const migrationSwing = (prov.popTrend ?? 0) * 3000;
         const weights = state.parties.map(p => {
             const bonus = affinity && p.ideologies.includes(affinity) ? 25 : 0;
-            const govBonus = p.status === "Government" ? investmentSwing : 0;
+            const govBonus = p.status === "Government" ? investmentSwing + migrationSwing : 0;
             // Long Campaign (Phase 7): a term's worth of campaignProvince() visits pays off
             // here, the same way pork-barrel investment does for whoever's in government --
             // the one electoral lever available to the player regardless of party status.
@@ -1264,7 +1292,7 @@ export const engine = {
             name: p.name, region: p.region, pop: p.pop, seats: p.seats,
             baseFaction: Data.PROVINCE_FACTION_OVERRIDES[p.name] || Data.REGION_FACTION_POOL[p.region][Math.floor(Math.random() * Data.REGION_FACTION_POOL[p.region].length)],
             industry: Data.PROVINCE_INDUSTRY_OVERRIDES[p.name] || Data.REGION_INDUSTRY_DEFAULT[p.region],
-            investmentLevel: 50, modifiers: []
+            investmentLevel: 50, modifiers: [], popTrend: 0
         }));
 
         // Capture today's production-per-capita as the neutral reference point, so growth is only
@@ -1563,7 +1591,18 @@ export const engine = {
             const regionAvg = regionInvestment[prov.region].sum / regionInvestment[prov.region].count;
             const migrationPull = ((prov.investmentLevel ?? 50) - regionAvg) * 0.00008;
             const nationalBaseline = state.world.growth * 0.00015;
-            prov.pop = Math.max(50000, Math.round(prov.pop * (1 + migrationPull + nationalBaseline)));
+            const monthlyChange = migrationPull + nationalBaseline;
+            prov.pop = Math.max(50000, Math.round(prov.pop * (1 + monthlyChange)));
+            // Emergent Chain Verification (Balance Pass v1 Phase 5): "Local decline -> migration ->
+            // vote share change -> election flip" checked out for "local decline -> vote share"
+            // (investmentLevel already drives getProvinceVoteShare()'s investmentSwing directly),
+            // but migration itself was a dead end -- population moved provinces around with zero
+            // path back into any election. A province can be genuinely emptying out for reasons
+            // investmentLevel alone doesn't fully capture (a neighboring region's boom pulling
+            // workers away), and that exodus is itself something an electorate punishes an
+            // incumbent for, on top of investment. Smoothed (EMA, not the raw noisy monthly
+            // figure) since getProvinceVoteShare() reads it directly, same as a trend arrow would.
+            prov.popTrend = (prov.popTrend ?? 0) + (monthlyChange - (prov.popTrend ?? 0)) * 0.2;
         });
 
         // Class transition (Phase 6): the 5 production-linked factions (เกษตรกร, แรงงาน,
